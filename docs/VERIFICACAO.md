@@ -30,6 +30,7 @@ com Chromium real:
 | `/api/semana` anônima | `401` |
 | `/api/atividades/:id` anônima | `401` |
 | `GET /api/sessao` anônima | `{"autenticado":false}` |
+| Telemetria HTTP | 4 eventos no banco após marcar e aguardar o flush: `usuario_identificado`, `tela_visualizada`, `semana_carregada`, `atividade_concluida` |
 
 ## Armadilhas encontradas (não repita)
 
@@ -65,7 +66,6 @@ com Chromium real:
   com relógio injetado) e o servidor tem teste de expiração, mas o aviso de 2 min
   não foi observado numa sessão real. Para testar:
   `--dart-define=PLANNER_INATIVIDADE_SEGUNDOS=25`.
-- **Telemetria HTTP de ponta a ponta**: o app foi publicado com
-  `PLANNER_ANALYTICS=http`, mas os eventos só saem quando a fila atinge 20 ou
-  após 10 s; a verificação feita cobriu marcação e persistência, não a chegada
-  do lote ao banco.
+- **Flush da telemetria em produção sob falha**: o caminho feliz foi observado
+  (lote de 4 eventos chegou ao banco após 10 s). A reentrega em caso de erro de
+  rede só tem teste unitário do coletor.
