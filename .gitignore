@@ -1,0 +1,39 @@
+# Arquivos de build
+build/
+.dart_tool/
+.packages
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+
+# Node / Workers
+node_modules/
+.wrangler/
+.dev.vars
+workers/api/.wrangler/
+
+# IDE
+.idea/
+*.iml
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.log
+
+# Segredos e infraestrutura local — NUNCA versionar num repositório público
+infra/
+*.token
+*_uri.txt
+*_uri_direto.txt
+senha.txt
+pepper.txt
+session_secret.txt
+service_token.txt
+FERRAMENTAS.local.md
+
+# Rascunhos e saídas de ferramenta
+.tmp/
+tmp/
+**/tmp/

@@ -1,0 +1,43 @@
+name: planner_sarah
+description: "Minha Semana — o planejador semanal da Sarah: rotina de estudo, movimento, casa e bem-estar com progresso salvo."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  planner_core:
+    path: ../pacotes/planner_core
+  planner_ui:
+    path: ../pacotes/planner_ui
+  flutter_web_plugins:
+    sdk: flutter
+  go_router: ^18.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/img/
+  fonts:
+    - family: Figtree
+      fonts:
+        - asset: assets/fonts/Figtree-400.ttf
+          weight: 400
+        - asset: assets/fonts/Figtree-500.ttf
+          weight: 500
+        - asset: assets/fonts/Figtree-600.ttf
+          weight: 600
+    - family: BricolageGrotesque
+      fonts:
+        - asset: assets/fonts/BricolageGrotesque-500.ttf
+          weight: 500
+        - asset: assets/fonts/BricolageGrotesque-700.ttf
+          weight: 700

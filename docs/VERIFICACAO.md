@@ -1,0 +1,71 @@
+# Verificação e decisões — Minha Semana
+
+Registro do que foi verificado nesta entrega, com o comando ou a evidência de
+cada item. Serve para não repetir checagem nem confiar em memória.
+
+## Testes automatizados
+
+| Suíte | Comando | Resultado |
+| --- | --- | --- |
+| Núcleo | `cd pacotes/planner_core && flutter test` | 55 testes |
+| App | `cd planner && flutter test` | 9 testes |
+| API | `cd workers/api && npm test` | 37 testes |
+| Análise estática | `flutter analyze` nos dois pacotes Dart | limpo |
+
+## Verificação manual no navegador
+
+Feita contra o build de produção (`minha-semana.quarto-de-milha.workers.dev`),
+com Chromium real:
+
+| O que | Evidência |
+| --- | --- |
+| Tela de login aparece sem sessão | árvore de acessibilidade com `Usuário`, `Senha`, `Entrar` |
+| Login com a senha correta | tela da semana, "progresso fica salvo na sua conta" |
+| Marcar atividade | contador da aba `1/14`, cabeçalho `1%` |
+| Recarregar mantém a marcação | `1%` e checkbox `checked` após reload |
+| Estado no banco | `atividades_concluidas` com a linha `qua-06:00` |
+| Modo escuro | captura com fundo `#141B19` e destaque `#6FC2AE` |
+| Layout estreito (430 px) | abas sem contador, timeline em coluna |
+| Cômodos (adicionar/remover) | teste de widget + captura da seção |
+| `/api/semana` anônima | `401` |
+| `/api/atividades/:id` anônima | `401` |
+| `GET /api/sessao` anônima | `{"autenticado":false}` |
+
+## Armadilhas encontradas (não repita)
+
+1. **Texto invisível no navegador.** Um `TextStyle` criado do zero perde a
+   família tipográfica e cai na fonte padrão do motor (Roboto), que o CSP não
+   libera — o texto simplesmente não aparece. Todo estilo precisa derivar de
+   `Theme.of(context).textTheme` ou declarar `fontFamily`.
+2. **Variável de fonte não basta.** As fontes do Google Fonts em formato
+   variável, instanciadas pelo `fontTools`, renderizavam no desktop e sumiam no
+   CanvasKit. Foram substituídas pelos TTF estáticos originais (upstream).
+3. **Servidor local de thread única.** O `SimpleHTTPServer` atende uma conexão
+   por vez e o navegador abre várias em paralelo (fonte, ícone, CanvasKit): o
+   build parece "não carregar". `ferramentas/servir.py` usa `ThreadingTCPServer`
+   e HTTP/1.1.
+4. **`curl` sem User-Agent** leva 403 (erro 1010) do Cloudflare.
+5. **Worker recém-criado responde 404 por alguns segundos.** `wrangler secret
+   put` cria o Worker vazio; o primeiro `deploy` leva ~15 s para propagar. Não é
+   erro de código.
+6. **`node --test test/`** falha no Node 22 do Windows tratando o diretório como
+   módulo. Use `node --test` (sem argumento).
+7. **`usePathUrlStrategy`** é obrigatório: sem ele `/dia/qua` abre a tela
+   inicial, porque tudo depois do `#` é ignorado.
+8. **Não carregue `flutter_bootstrap.js` junto com o bloco inline.** Inicializa
+   o motor duas vezes e o Canvaskit quebra no primeiro rebuild.
+
+## O que não foi verificado
+
+- **Android/iOS**: as pastas existem (o `flutter create` as gerou), mas nenhum
+  build foi feito. A sessão por cookie é o ponto a revisar no mobile — o
+  `http.Client` fora do navegador não gerencia cookies sozinho; o caminho é usar
+  `PLANNER_TOKEN` ou um gerenciador de cookies.
+- **Inatividade de 1 h** em tempo real: a lógica tem teste unitário (`Inatividade`
+  com relógio injetado) e o servidor tem teste de expiração, mas o aviso de 2 min
+  não foi observado numa sessão real. Para testar:
+  `--dart-define=PLANNER_INATIVIDADE_SEGUNDOS=25`.
+- **Telemetria HTTP de ponta a ponta**: o app foi publicado com
+  `PLANNER_ANALYTICS=http`, mas os eventos só saem quando a fila atinge 20 ou
+  após 10 s; a verificação feita cobriu marcação e persistência, não a chegada
+  do lote ao banco.

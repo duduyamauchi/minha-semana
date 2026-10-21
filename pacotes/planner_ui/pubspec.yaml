@@ -1,0 +1,16 @@
+name: planner_ui
+description: "Primitivas visuais neutras do Minha Semana: paleta injetável, cartões, etiquetas e acessórios."
+version: 1.0.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

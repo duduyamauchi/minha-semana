@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "minha-semana",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-20",
+  "assets": {
+    "directory": "./build/web",
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "API",
+      "service": "minha-semana-api"
+    }
+  ]
+}

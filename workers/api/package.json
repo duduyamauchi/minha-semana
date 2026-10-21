@@ -1,0 +1,17 @@
+{
+  "name": "minha-semana-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "API do Minha Semana: sessão, estado da semana e telemetria sobre o Neon.",
+  "scripts": {
+    "test": "node --test",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.151.3"
+  }
+}

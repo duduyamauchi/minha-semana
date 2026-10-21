@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <!--
+    O `--base-href` do `flutter build` substitui o valor abaixo; o caminho
+    precisa começar e terminar com "/".
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <!--
+    Defesa em profundidade: o cabeçalho HTTP equivalente está em `web/_headers`,
+    que a Cloudflare aplica no deploy; esta meta vale para qualquer outro host.
+    O app não carrega script de terceiro, e `connect-src` libera só a própria
+    origem — a API vive no mesmo host, atrás do proxy `/api`.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Minha Semana: rotina de estudo, movimento, casa e bem-estar, com o progresso salvo.">
+
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#F3F5F2" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141B19" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-title" content="Minha Semana">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Minha Semana</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <!--
+    Loader explícito: aponta o Canvaskit para o arquivo local (`canvaskit/`), em
+    vez do CDN `gstatic.com`. Além de casar com o CSP, remove uma dependência de
+    terceiro no caminho crítico de carregamento.
+
+    Não adicione `<script src="flutter_bootstrap.js">` junto: o motor seria
+    inicializado duas vezes e o Canvaskit quebraria no primeiro rebuild.
+  -->
+  <script>
+    {{flutter_js}}
+    {{flutter_build_config}}
+    _flutter.loader.load({
+      onEntrypointLoaded: async (engineInitializer) => {
+        const appRunner = await engineInitializer.initializeEngine({
+          canvasKitBaseUrl: "canvaskit/",
+        });
+        await appRunner.runApp();
+      },
+    });
+  </script>
+</body>
+</html>
