@@ -49,14 +49,19 @@ com Chromium real:
 5. **Secrets do Pages exigem redeploy.** `wrangler pages secret put` não afeta o
    deployment já publicado: a Function continua respondendo `503 Servidor sem
    SESSION_SECRET`. Publique de novo depois de criar o secret.
-6. **`_redirects` não vale para Functions.** As rotas são enumeradas
-   (`/semana`, `/dia/*`, `/acesso`, `/ajustes`) justamente para não capturar
-   `/api`.
-7. **`node --test test/`** falha no Node 22 do Windows tratando o diretório como
+6. **`_redirects` para SPA perde a rota.** `/ajustes /index.html 200` vira 308
+   para `/index.html` e o Pages normaliza para `/`: a barra de endereço perde o
+   caminho. A solução é um middleware (`functions/_middleware.js`) que serve o
+   índice com 200 no próprio caminho. Redirects também não se aplicam a rotas de
+   Function, então um curinga ali engoliria `/api`.
+7. **`initialLocation` no GoRouter sobrescreve a URL.** Num link
+   compartilhado (`/dia/qua`), o app abria `/semana`. Sem esse campo, o
+   roteador parte da URL atual; no mobile a rota inicial `/` redireciona.
+8. **`node --test test/`** falha no Node 22 do Windows tratando o diretório como
    módulo. Use `node --test` (sem argumento).
-8. **`usePathUrlStrategy`** é obrigatório: sem ele `/dia/qua` abre a tela
+9. **`usePathUrlStrategy`** é obrigatório: sem ele `/dia/qua` abre a tela
    inicial, porque tudo depois do `#` é ignorado.
-9. **Não carregue `flutter_bootstrap.js` junto com o bloco inline.** Inicializa
+10. **Não carregue `flutter_bootstrap.js` junto com o bloco inline.** Inicializa
    o motor duas vezes e o Canvaskit quebra no primeiro rebuild.
 
 ## O que não foi verificado

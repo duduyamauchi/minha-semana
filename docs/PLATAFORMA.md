@@ -32,9 +32,10 @@ egress.
   de estático + host de API separado, o login entra mas o app não persiste — foi
   um bug real no projeto de referência.
 - **`_headers` é respeitado**: CSP e HSTS saem junto com o build.
-- **Roteamento de SPA**: `_redirects` manda `/dia/*`, `/semana`, `/acesso` e
-  `/ajustes` para o `index.html`. As rotas são enumeradas justamente para não
-  capturar `/api`.
+- **Roteamento de SPA**: `planner/functions/_middleware.js` serve o `index.html`
+  com 200 quando o caminho não é asset nem `/api`, preservando a URL. Com
+  `_redirects` o Pages respondia 308 para `/index.html` (normalizado para `/`),
+  apagando a rota — um link `/dia/qua` abria a raiz.
 - **Custo**: o free tier do Pages tem requisições e bandwidth folgados; um
   planner pessoal usa três ordens de magnitude menos.
 - **Um único deploy** publica app e API, com os mesmos secrets.

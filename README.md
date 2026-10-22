@@ -10,14 +10,14 @@ publicada, **sincroniza na nuvem** entre aparelhos.
 | [`planner`](planner/) | O aplicativo: semana, timeline, cômodos, ajustes e login | Web, Android, iOS |
 | [`pacotes/planner_core`](pacotes/planner_core/) | Template da semana, contrato de fonte, fachada e telemetria (sem UI) | — |
 | [`pacotes/planner_ui`](pacotes/planner_ui/) | Primitivas visuais neutras, com paleta injetada | — |
-| [`workers/api`](workers/api/) | API sobre o Postgres: sessão, estado da semana, eventos | — |
+| [`api`](api/) | API sobre o Postgres: sessão, estado da semana, eventos (Pages Function) | — |
 | [`deploy`](deploy/) | Schema do banco e provisionamento | — |
 
 ## Por onde começar
 
 - **Entender a arquitetura:** [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)
 - **Rodar tudo localmente:** `python ferramentas/servir.py`
-- **Testar:** `flutter test` em `pacotes/planner_core` e `planner`; `npm test` em `workers/api`
+- **Testar:** `flutter test` em `pacotes/planner_core` e `planner`; `npm test` em `api`
 
 ## Estado atual
 

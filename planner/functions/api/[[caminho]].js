@@ -4,8 +4,8 @@
 // de sessão `SameSite=Strict` vale — chamar outro host seria cross-site e o
 // navegador descartaria o cookie, deixando o app "logado" que não persiste.
 //
-// O código é o mesmo que roda no Worker (`api/src`): uma implementação,
-// dois ambientes possíveis. O Pages injeta variáveis e secrets em `context.env`,
+// O código é o mesmo que roda no Worker (`api/src`): uma implementação, dois
+// ambientes possíveis. O Pages injeta variáveis e secrets em `context.env`,
 // exatamente como o Worker faz.
 
 import { criarSql, tratar } from '../../../api/src/index.js';

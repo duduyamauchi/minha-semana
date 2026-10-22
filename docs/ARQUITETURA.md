@@ -9,7 +9,7 @@ minha-semana/
 ├── pacotes/planner_core/   template da semana, contrato, fachada, telemetria
 ├── pacotes/planner_ui/     primitivas visuais neutras (paleta injetada)
 ├── planner/                o aplicativo + proxy /api (web, Android, iOS)
-├── workers/api/            API sobre o Neon (auth, validação, autorização)
+├── api/                    API sobre o Neon (auth, validação, autorização)
 └── deploy/                 schema.sql e provisionamento
 ```
 

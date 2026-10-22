@@ -1,6 +1,0 @@
-# Rotas do app (usePathUrlStrategy): o Pages serve o index e o Flutter resolve o
-# caminho no cliente. Enumeradas em vez de `/*` para não capturar `/api`.
-/semana    /index.html  200
-/dia/*     /index.html  200
-/acesso    /index.html  200
-/ajustes   /index.html  200

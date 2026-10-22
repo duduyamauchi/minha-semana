@@ -126,6 +126,8 @@ void main() {
     expect(find.text('Neste aparelho'), findsOneWidget);
   });
 
+  _rotasTeste();
+
   testWidgets('link /dia/dom abre o domingo', (tester) async {
     tester.view.physicalSize = const Size(1000, 2400);
     tester.view.devicePixelRatio = 1;
@@ -155,5 +157,46 @@ void main() {
 
     expect(find.textContaining('Domingo'), findsWidgets);
     expect(find.text('Descanso'), findsOneWidget);
+  });
+}
+
+void _rotasTeste() {
+  group('rota pedida antes do login', () {
+    testWidgets('link profundo sem sessão volta para o dia pedido depois de entrar', (tester) async {
+      tester.view.physicalSize = const Size(1000, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      final rep = Repositorio(FonteMemoria());
+      await rep.carregar();
+      final sessao = ValueNotifier<Sessao?>(null);
+      final rotas = Rotas(
+        repositorio: rep,
+        exigeLogin: true,
+        sessao: sessao,
+        aoEntrar: (_, _) async => const Sessao(usuario: 'sarah', papel: 'proprietario'),
+        aoSair: () async {},
+      ).criar();
+
+      await tester.pumpWidget(
+        EscopoUi(
+          paleta: PaletaUi.clara,
+          child: MaterialApp.router(routerConfig: rotas),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Sem sessão: pede login, mas guarda o destino.
+      rotas.go('/dia/dom');
+      await tester.pumpAndSettle();
+      expect(find.text('Entrar'), findsOneWidget);
+
+      // Depois de entrar, o app retoma o dia pedido em vez de abrir /semana.
+      sessao.value = const Sessao(usuario: 'sarah', papel: 'proprietario');
+      await tester.pumpAndSettle();
+
+      expect(rotas.routerDelegate.currentConfiguration.uri.path, '/dia/dom');
+      expect(find.text('Descanso'), findsOneWidget);
+    });
   });
 }

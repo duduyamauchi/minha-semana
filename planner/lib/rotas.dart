@@ -34,15 +34,32 @@ class Rotas {
   final Future<Sessao> Function(String usuario, String senha) aoEntrar;
   final Future<void> Function() aoSair;
 
+  /// Rota pedida antes do login, para retomar depois dele.
+  String? _destinoAposLogin;
+
   GoRouter criar() => GoRouter(
-    initialLocation: '/semana',
+    // O link compartilhado precisa abrir o dia pedido. O GoRouter só usa a URL
+    // do navegador quando `initialLocation` é nulo **e** a rota padrão da
+    // plataforma não é `/`; na prática o caminho observado veio vazio e a tela
+    // caía em `/semana`. Lendo `Uri.base` explicitamente, a URL manda.
+    initialLocation: _rotaInicial(),
     refreshListenable: sessao,
     redirect: (context, estado) {
       final naTelaDeAcesso = estado.matchedLocation == '/acesso';
       final autenticado = !exigeLogin || sessao.value != null;
 
-      if (!autenticado) return naTelaDeAcesso ? null : '/acesso';
-      if (naTelaDeAcesso) return '/semana';
+      if (!autenticado) {
+        if (naTelaDeAcesso) return null;
+        // Guarda o destino para voltar a ele depois do login: sem isto, abrir
+        // `/dia/qua` sem sessão terminava em `/semana` após entrar.
+        _destinoAposLogin = estado.uri.toString();
+        return '/acesso';
+      }
+      if (naTelaDeAcesso) {
+        final destino = _destinoAposLogin;
+        _destinoAposLogin = null;
+        return destino == null || destino == '/acesso' ? '/semana' : destino;
+      }
       return null;
     },
     routes: [
@@ -68,6 +85,13 @@ class Rotas {
       ),
     ],
   );
+
+  /// Caminho pedido pela URL atual; `/` no mobile, onde não há URL.
+  static String _rotaInicial() {
+    if (!kIsWeb) return '/semana';
+    final caminho = Uri.base.path;
+    return caminho.isEmpty || caminho == '/' ? '/semana' : caminho;
+  }
 
   Widget _semana(BuildContext context, GoRouterState estado) => TelaSemana(
     repositorio: repositorio,
