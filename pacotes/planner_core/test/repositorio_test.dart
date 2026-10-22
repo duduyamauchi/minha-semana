@@ -53,6 +53,8 @@ class _FonteLeitura with GravacaoGranular implements FonteDeDados {
 }
 
 void main() {
+  _testesDeEdicao();
+
   late Repositorio rep;
   late FonteMemoria fonte;
 
@@ -257,4 +259,129 @@ class _ColetorExplosivo implements ColetorAnalytics {
 
   @override
   Future<void> encerrar() async {}
+}
+
+void _testesDeEdicao() {
+  group('edição do plano pelo repositório', () {
+    late Repositorio rep;
+    late FonteMemoria fonte;
+
+    setUp(() async {
+      fonte = FonteMemoria();
+      rep = Repositorio(fonte);
+      await rep.carregar();
+    });
+
+    test('criar atividade persiste e aparece no dia', () async {
+      final nova = rep.novaAtividade('ter', horario: '07:00', titulo: 'Corrida');
+      final ok = await rep.salvarAtividade(nova);
+
+      expect(ok, isTrue);
+      expect(rep.semana.dia('ter')!.atividade(nova.id)!.titulo, 'Corrida');
+      final salvo = await fonte.carregar();
+      expect(salvo.dias!.firstWhere((d) => d.chave == 'ter').atividade(nova.id)!.titulo, 'Corrida');
+    });
+
+    test('editar horário e duração grava e mantém a marcação', () async {
+      final original = rep.dias.first.atividades.first;
+      await rep.alternar(original);
+
+      final ok = await rep.salvarAtividade(
+        original.copiarCom(horario: '05:45', duracaoMinutos: 25, titulo: 'Acordar cedo'),
+      );
+
+      expect(ok, isTrue);
+      final relida = rep.semana.dia(original.dia)!.atividade(original.id)!;
+      expect(relida.horario, '05:45');
+      expect(relida.duracaoMinutos, 25);
+      expect(rep.semana.concluida(relida), isTrue);
+
+      final salvo = await fonte.carregar();
+      final gravada = salvo.dias!.firstWhere((d) => d.chave == original.dia).atividade(original.id)!;
+      expect(gravada.horario, '05:45');
+      expect(gravada.duracaoMinutos, 25);
+    });
+
+    test('excluir remove da tela, da fonte e da marcação', () async {
+      final alvo = rep.dias[2].atividades.first;
+      await rep.alternar(alvo);
+
+      final ok = await rep.removerAtividade(alvo);
+
+      expect(ok, isTrue);
+      expect(rep.semana.dia(alvo.dia)!.atividade(alvo.id), isNull);
+      expect(rep.semana.marcadas, isNot(contains(alvo.id)));
+      final salvo = await fonte.carregar();
+      expect(salvo.marcadas, isNot(contains(alvo.id)));
+      expect(salvo.dias!.firstWhere((d) => d.chave == alvo.dia).atividade(alvo.id), isNull);
+    });
+
+    test('título vazio ou horário inválido não grava', () async {
+      final nova = rep.novaAtividade('seg');
+      expect(await rep.salvarAtividade(nova.copiarCom(titulo: '   ')), isFalse);
+      expect(rep.erro, contains('título'));
+
+      expect(
+        await rep.salvarAtividade(nova.copiarCom(titulo: 'Válida', horario: '99:99')),
+        isFalse,
+      );
+      expect(rep.erro, contains('Horário'));
+      expect(rep.semana.dia('seg')!.atividade(nova.id), isNull);
+    });
+
+    test('horário é normalizado antes de gravar', () async {
+      final nova = rep.novaAtividade('seg', horario: '7:5', titulo: 'Café');
+      await rep.salvarAtividade(nova);
+      expect(rep.semana.dia('seg')!.atividade(nova.id)!.horario, '07:05');
+    });
+
+    test('telemetria distingue criação de edição', () async {
+      final nova = rep.novaAtividade('qua', horario: '06:20', titulo: 'Beber água');
+      await rep.salvarAtividade(nova);
+      await rep.salvarAtividade(nova.copiarCom(duracaoMinutos: 5));
+
+      final nomes = rep.analytics.recentes.map((e) => e.nome).toList();
+      expect(nomes, contains('atividade_criada'));
+      expect(nomes, contains('atividade_editada'));
+      final criada = rep.analytics.recentes.lastWhere((e) => e.nome == 'atividade_criada');
+      expect(criada.propriedades['duracao'], isNull);
+      final editada = rep.analytics.recentes.lastWhere((e) => e.nome == 'atividade_editada');
+      expect(editada.propriedades['duracao'], 5);
+    });
+
+    test('plano editado sobrevive a um carregamento novo', () async {
+      final nova = rep.novaAtividade('sex', horario: '21:30', titulo: 'Diário');
+      await rep.salvarAtividade(nova);
+
+      final outro = Repositorio(fonte);
+      await outro.carregar();
+      expect(outro.semana.dia('sex')!.atividade(nova.id)!.titulo, 'Diário');
+    });
+
+    test('edição falha mantém o estado local e reporta erro', () async {
+      final quebrada = Repositorio(_FonteQuebrada());
+      await quebrada.carregar();
+      final nova = quebrada.novaAtividade('seg', horario: '10:10', titulo: 'Yoga');
+
+      final ok = await quebrada.salvarAtividade(nova);
+
+      expect(ok, isFalse);
+      expect(quebrada.erro, isNotNull);
+      expect(quebrada.semana.dia('seg')!.atividade(nova.id), isNotNull);
+    });
+
+    test('dois aparelhos editando dias diferentes não se sobrescrevem', () async {
+      final outro = Repositorio(fonte);
+      await outro.carregar();
+
+      final a = rep.novaAtividade('seg', horario: '10:00', titulo: 'A');
+      final b = outro.novaAtividade('ter', horario: '10:00', titulo: 'B');
+      await rep.salvarAtividade(a);
+      await outro.salvarAtividade(b);
+
+      final salvo = await fonte.carregar();
+      expect(salvo.dias!.firstWhere((d) => d.chave == 'seg').atividade(a.id), isNotNull);
+      expect(salvo.dias!.firstWhere((d) => d.chave == 'ter').atividade(b.id), isNotNull);
+    });
+  });
 }

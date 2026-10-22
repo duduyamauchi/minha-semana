@@ -4,7 +4,13 @@
 /// nem widget. Tudo o que a tela precisa saber sobre a semana (quais
 /// atividades existem, o que está marcado, quanto já foi feito) é calculado
 /// aqui, e não dentro de `build`.
+///
+/// O plano **é dado do usuário**: cada atividade pode ser criada, editada e
+/// removida, e o que se persiste é o plano inteiro (mais as marcações). O
+/// template do HTML original é apenas o ponto de partida (`dados_semana.dart`).
 library;
+
+import 'horario.dart';
 
 /// Áreas da rotina, com a cor que o template original dava a cada bloco.
 enum Categoria {
@@ -32,31 +38,39 @@ enum Categoria {
   }
 }
 
-/// Uma linha da timeline de um dia.
+/// Uma entrada da timeline de um dia.
 class Atividade {
   const Atividade({
     required this.id,
+    required this.dia,
     required this.horario,
     required this.titulo,
     this.detalhe = '',
+    this.duracaoMinutos,
     required this.categoria,
     this.fixo = false,
     this.prioridade = false,
   });
 
-  /// Identificador estável: `seg-06:00`.
+  /// Identificador estável e opaco: `seg-06:00` ou `seg-08:00-2`.
   ///
-  /// Chavear por dia + horário (e não pelo índice) faz a marcação sobreviver a
-  /// uma mudança no template — inserir uma atividade não remarca as outras.
+  /// O horário faz parte do id **de criação**, não da identidade: editar o
+  /// horário mantém o id, então a marcação da atividade não se perde.
   final String id;
 
-  /// Horário no formato `HH:mm`, como no planejador original.
+  /// Dia a que pertence (`seg`, `ter`, …).
+  final String dia;
+
+  /// Início no formato `HH:mm`.
   final String horario;
 
   final String titulo;
 
   /// Linha secundária; vazio quando a atividade não tem detalhe.
   final String detalhe;
+
+  /// Duração em minutos. `null` para itens pontuais ("Acordar").
+  final int? duracaoMinutos;
 
   final Categoria categoria;
 
@@ -68,37 +82,92 @@ class Atividade {
 
   bool get temDetalhe => detalhe.isNotEmpty;
 
-  Atividade copiarCom({String? horario, String? titulo, String? detalhe}) => Atividade(
+  /// Horário de término, quando há duração.
+  String? get termino =>
+      duracaoMinutos == null ? null : Horario.somar(horario, duracaoMinutos);
+
+  /// Duração em texto curto (`3h30`, `45 min`); vazio quando não há.
+  String get duracaoTexto {
+    final minutos = duracaoMinutos;
+    if (minutos == null || minutos <= 0) return '';
+    final h = minutos ~/ 60;
+    final m = minutos % 60;
+    if (h == 0) return '$m min';
+    if (m == 0) return '${h}h';
+    return '${h}h${m.toString().padLeft(2, '0')}';
+  }
+
+  /// Faixa exibida na linha: `06:00 · 45 min` ou só `06:00`.
+  String get faixaHoraria {
+    final duracao = duracaoTexto;
+    return duracao.isEmpty ? horario : '$horario · $duracao';
+  }
+
+  /// Minutos desde a meia-noite, para ordenar; horário inválido vai para o fim.
+  int get minutosDoDia => Horario.minutos(horario) ?? 24 * 60;
+
+  Atividade copiarCom({
+    String? dia,
+    String? horario,
+    String? titulo,
+    String? detalhe,
+    int? duracaoMinutos,
+    bool limparDuracao = false,
+    Categoria? categoria,
+    bool? fixo,
+    bool? prioridade,
+  }) => Atividade(
     id: id,
+    dia: dia ?? this.dia,
     horario: horario ?? this.horario,
     titulo: titulo ?? this.titulo,
     detalhe: detalhe ?? this.detalhe,
-    categoria: categoria,
-    fixo: fixo,
-    prioridade: prioridade,
+    duracaoMinutos: limparDuracao ? null : (duracaoMinutos ?? this.duracaoMinutos),
+    categoria: categoria ?? this.categoria,
+    fixo: fixo ?? this.fixo,
+    prioridade: prioridade ?? this.prioridade,
   );
 
   static String chavear(String dia, String horario) => '$dia-$horario';
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'dia': dia,
     'horario': horario,
     'titulo': titulo,
     if (detalhe.isNotEmpty) 'detalhe': detalhe,
+    if (duracaoMinutos != null) 'duracaoMinutos': duracaoMinutos,
     'categoria': categoria.chave,
     'fixo': fixo,
     'prioridade': prioridade,
   };
 
-  factory Atividade.fromJson(Map<String, dynamic> j) => Atividade(
-    id: (j['id'] as String?) ?? chavear((j['dia'] as String?) ?? 'seg', (j['horario'] as String?) ?? '00:00'),
-    horario: (j['horario'] as String?) ?? '00:00',
-    titulo: (j['titulo'] as String?) ?? 'Sem título',
-    detalhe: (j['detalhe'] as String?) ?? '',
-    categoria: Categoria.de(j['categoria'] as String?),
-    fixo: j['fixo'] == true,
-    prioridade: j['prioridade'] == true,
-  );
+  factory Atividade.fromJson(Map<String, dynamic> j) {
+    final dia = (j['dia'] as String?) ?? _diaDoId(j['id'] as String?);
+    final horario = Horario.normalizar(j['horario'] as String?) ?? '00:00';
+    final duracao = (j['duracaoMinutos'] as num?)?.toInt();
+    return Atividade(
+      id: (j['id'] as String?) ?? chavear(dia, horario),
+      dia: dia,
+      horario: horario,
+      titulo: (j['titulo'] as String?)?.trim().isNotEmpty == true
+          ? (j['titulo'] as String).trim()
+          : 'Sem título',
+      detalhe: (j['detalhe'] as String?) ?? '',
+      // Duração inválida (negativa, absurda) é descartada em vez de quebrar.
+      duracaoMinutos: duracao == null || duracao <= 0 || duracao > 24 * 60 ? null : duracao,
+      categoria: Categoria.de(j['categoria'] as String?),
+      fixo: j['fixo'] == true,
+      prioridade: j['prioridade'] == true,
+    );
+  }
+
+  /// Dia deduzido de um id antigo (`seg-06:00`), para planos na versão 2.
+  static String _diaDoId(String? id) {
+    final texto = id ?? '';
+    final i = texto.indexOf('-');
+    return i <= 0 ? 'seg' : texto.substring(0, i);
+  }
 
   @override
   String toString() => 'Atividade($id, $titulo)';
@@ -119,6 +188,15 @@ class Dia {
 
   final List<Atividade> atividades;
 
+  /// Chaves válidas, na ordem da semana.
+  static const chavesValidas = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];
+
+  /// Verdadeiro quando [chave] identifica um dia da semana conhecido.
+  ///
+  /// O plano é editável nas atividades, não na estrutura: um dia inventado
+  /// viraria uma aba fantasma sem lugar na semana.
+  static bool chaveValida(String chave) => chavesValidas.contains(chave);
+
   /// `Seg`, `Ter`, … como nas abas do planejador.
   String get nomeCurto => nome.length <= 3 ? nome : nome.substring(0, 3);
 
@@ -130,19 +208,60 @@ class Dia {
     }
     return null;
   }
+
+  /// Atividades em ordem de horário; empate preserva a ordem de criação.
+  List<Atividade> get ordenadas {
+    final lista = [...atividades];
+    // `sort` não é estável em Dart, então o índice entra como desempate.
+    final posicao = {for (var i = 0; i < lista.length; i++) lista[i].id: i};
+    lista.sort((a, b) {
+      final porHora = a.minutosDoDia.compareTo(b.minutosDoDia);
+      return porHora != 0 ? porHora : posicao[a.id]!.compareTo(posicao[b.id]!);
+    });
+    return lista;
+  }
+
+  Dia copiarCom({String? nome, String? nota, List<Atividade>? atividades}) => Dia(
+    chave: chave,
+    nome: nome ?? this.nome,
+    nota: nota ?? this.nota,
+    atividades: atividades ?? this.atividades,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'chave': chave,
+    'nome': nome,
+    'nota': nota,
+    'atividades': [for (final a in atividades) a.toJson()],
+  };
+
+  factory Dia.fromJson(Map<String, dynamic> j) {
+    final chave = (j['chave'] as String?) ?? 'seg';
+    final atividades = <Atividade>[];
+    final vistos = <String>{};
+    for (final a in (j['atividades'] as List? ?? const [])) {
+      if (a is! Map) continue;
+      final atividade = Atividade.fromJson(a.cast<String, dynamic>());
+      // Ids repetidos dentro do dia quebrariam a marcação: descarta o duplicado.
+      if (!vistos.add(atividade.id)) continue;
+      atividades.add(atividade.id.startsWith('$chave-') ? atividade : atividade.copiarCom(dia: chave));
+    }
+    return Dia(
+      chave: chave,
+      nome: (j['nome'] as String?) ?? chave,
+      nota: (j['nota'] as String?) ?? '',
+      atividades: atividades,
+    );
+  }
 }
 
-/// O plano semanal completo (o "template" e o estado do usuário).
-///
-/// [dias] é o template compilado; [marcadas] é o que o usuário já fez e
-/// [comodos] é a lista de reorganização. Tudo o que muda é serializável: é
-/// exatamente isso que a fonte de dados grava.
+/// O plano semanal do usuário, com o que já foi feito.
 class Semana {
   const Semana({required this.dias, required this.marcadas, required this.comodos});
 
   final List<Dia> dias;
 
-  /// IDs (`seg-06:00`) das atividades concluídas.
+  /// IDs das atividades concluídas.
   final Set<String> marcadas;
 
   final List<Comodo> comodos;
@@ -150,7 +269,7 @@ class Semana {
   /// Total de atividades da semana, base do percentual.
   int get totalAtividades => dias.fold(0, (soma, d) => soma + d.atividades.length);
 
-  /// Quantidade de atividades concluídas que ainda existem no template.
+  /// Quantidade de atividades concluídas que ainda existem no plano.
   int get totalFeitas {
     var feitas = 0;
     for (final d in dias) {
@@ -170,8 +289,7 @@ class Semana {
   /// Percentual arredondado, como o `0%` do cabeçalho.
   int get percentual => (progresso * 100).round();
 
-  int feitasNoDia(Dia dia) =>
-      dia.atividades.where((a) => marcadas.contains(a.id)).length;
+  int feitasNoDia(Dia dia) => dia.atividades.where((a) => marcadas.contains(a.id)).length;
 
   bool concluida(Atividade atividade) => marcadas.contains(atividade.id);
 
@@ -191,55 +309,143 @@ class Semana {
   }
 
   /// Nome do dia da semana para uma data (segunda = 0).
-  static String chaveDe([DateTime? agora]) {
-    const chaves = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];
-    return chaves[indiceDeHoje(agora)];
+  static String chaveDe([DateTime? agora]) => Dia.chavesValidas[indiceDeHoje(agora)];
+
+  // ---------------------------------------------------------------------------
+  // Edição do plano
+  //
+  // Todas devolvem uma nova `Semana`: quem chama decide quando publicar. As
+  // marcações acompanham a atividade, e são removidas junto com ela para não
+  // inflar o percentual com ids órfãos.
+  // ---------------------------------------------------------------------------
+
+  /// Id livre para uma atividade nova naquele dia e horário.
+  ///
+  /// Preferir `dia-HH:mm` mantém os ids legíveis; quando já existe, ganha um
+  /// sufixo numérico. Nunca reaproveita id de outra atividade.
+  String idLivre(String chaveDia, String horario) {
+    final alvo = dia(chaveDia);
+    final existentes = {for (final a in alvo?.atividades ?? const <Atividade>[]) a.id}
+      ..addAll(marcadas);
+    final base = Atividade.chavear(chaveDia, horario);
+    if (!existentes.contains(base)) return base;
+    for (var i = 2; i < 1000; i++) {
+      final candidato = '$base-$i';
+      if (!existentes.contains(candidato)) return candidato;
+    }
+    // Sem vaga legível, cai num id opaco: nunca deve acontecer no uso normal.
+    return '$base-${DateTime.now().microsecondsSinceEpoch}';
   }
 
-  Semana copiarCom({
-    List<Dia>? dias,
-    Set<String>? marcadas,
-    List<Comodo>? comodos,
-  }) => Semana(
+  /// Atividade nova no dia de [referencia] — o id e o `dia` são preenchidos.
+  Atividade novaAtividade(
+    Atividade referencia, {
+    String? horario,
+    String? titulo,
+    String? detalhe,
+    int? duracaoMinutos,
+    Categoria? categoria,
+  }) {
+    final chave = referencia.dia;
+    final inicio = Horario.normalizar(horario ?? referencia.horario) ?? '08:00';
+    return Atividade(
+      id: idLivre(chave, inicio),
+      dia: chave,
+      horario: inicio,
+      // Rascunho nasce sem título: o campo do editor deve começar vazio, e o
+      // repositório recusa gravar sem nome.
+      titulo: titulo ?? '',
+      detalhe: detalhe ?? '',
+      duracaoMinutos: duracaoMinutos,
+      categoria: categoria ?? Categoria.casa,
+    );
+  }
+
+  /// Insere ou substitui uma atividade pelo id, no dia indicado.
+  Semana salvarAtividade(Atividade atividade) {
+    final chave = atividade.dia;
+    final alvo = dia(chave);
+    if (alvo == null) return this;
+    final existe = alvo.atividades.any((a) => a.id == atividade.id);
+    final atividades = existe
+        ? [for (final a in alvo.atividades) if (a.id == atividade.id) atividade else a]
+        : [...alvo.atividades, atividade];
+    return copiarCom(
+      dias: [for (final d in dias) if (d.chave == chave) d.copiarCom(atividades: atividades) else d],
+    );
+  }
+
+  /// Remove uma atividade e a marcação associada.
+  Semana removerAtividade(String chaveDia, String id) {
+    final alvo = dia(chaveDia);
+    if (alvo == null || !alvo.atividades.any((a) => a.id == id)) return this;
+    return copiarCom(
+      dias: [
+        for (final d in dias)
+          if (d.chave == chaveDia)
+            d.copiarCom(atividades: [for (final a in d.atividades) if (a.id != id) a])
+          else
+            d,
+      ],
+      marcadas: {...marcadas}..remove(id),
+    );
+  }
+
+  Semana copiarCom({List<Dia>? dias, Set<String>? marcadas, List<Comodo>? comodos}) => Semana(
     dias: dias ?? this.dias,
     marcadas: marcadas ?? this.marcadas,
     comodos: comodos ?? this.comodos,
   );
 
-  /// Esta semana com outro estado, mantendo o template.
+  /// Esta semana com outro estado, mantendo o plano.
   Semana comEstado(EstadoSemana novo) =>
-      Semana(dias: dias, marcadas: novo.marcadas, comodos: novo.comodos);
+      Semana(dias: novo.dias ?? dias, marcadas: novo.marcadas, comodos: novo.comodos);
 
-  /// O que efetivamente se persiste: marcações e cômodos.
-  ///
-  /// O template não vai para o banco — ele é compilado no app, então mudar a
-  /// rotina não exige migração de dados.
-  EstadoSemana get estado => EstadoSemana(marcadas: marcadas, comodos: comodos);
+  /// O que efetivamente se persiste: o plano, as marcações e os cômodos.
+  EstadoSemana get estado =>
+      EstadoSemana(dias: dias, marcadas: marcadas, comodos: comodos);
 
   Map<String, dynamic> toJson() => estado.toJson();
 
-  /// Reconstrói a semana a partir do JSON, sobre o template compilado.
+  /// Reconstrói a semana a partir do JSON.
+  ///
+  /// Sem plano no estado (formato v2, gravado antes da edição existir), usa o
+  /// template do HTML como ponto de partida — é a migração do que já estava
+  /// salvo no aparelho ou no banco.
   factory Semana.doJson(Map<String, dynamic> j, {required List<Dia> base}) {
     final estado = EstadoSemana.fromJson(j);
-    return Semana(dias: base, marcadas: estado.marcadas, comodos: estado.comodos);
+    return Semana(
+      dias: estado.dias ?? base,
+      marcadas: estado.marcadas,
+      comodos: estado.comodos,
+    );
   }
 }
 
-/// Fotografia persistida da semana: o que o usuário fez, não o que o app propõe.
+/// Fotografia persistida da semana: o plano e o que já foi feito.
 class EstadoSemana {
-  const EstadoSemana({required this.marcadas, required this.comodos});
+  const EstadoSemana({required this.marcadas, required this.comodos, this.dias});
 
   final Set<String> marcadas;
   final List<Comodo> comodos;
 
-  /// Versão do formato gravado. Serve para migrações futuras sem quebrar o
-  /// estado já salvo no aparelho ou no banco.
-  static const versaoFormato = 2;
+  /// Plano do usuário. `null` significa "use o template do app" — o formato
+  /// v2 não guardava o plano, e é assim que a migração acontece.
+  final List<Dia>? dias;
+
+  /// Versão do formato gravado.
+  ///
+  /// v2: marcações e cômodos. v3: acrescenta o plano editável.
+  static const versaoFormato = 3;
+
+  EstadoSemana comPlano(List<Dia> plano) =>
+      EstadoSemana(marcadas: marcadas, comodos: comodos, dias: plano);
 
   Map<String, dynamic> toJson() => {
     'versao': versaoFormato,
     'marcadas': marcadas.toList()..sort(),
     'comodos': [for (final c in comodos) c.toJson()],
+    if (dias != null) 'dias': [for (final d in dias!) d.toJson()],
   };
 
   /// Campos ausentes ou inválidos não quebram a leitura: entradas ruins são
@@ -257,9 +463,26 @@ class EstadoSemana {
       if (comodo.nome.isEmpty || !vistos.add(comodo.id)) continue;
       comodos.add(comodo);
     }
+
+    List<Dia>? plano;
+    final dias = j['dias'];
+    if (dias is List && dias.isNotEmpty) {
+      final lidos = <Dia>[];
+      final chaves = <String>{};
+      for (final d in dias) {
+        if (d is! Map) continue;
+        final dia = Dia.fromJson(d.cast<String, dynamic>());
+        if (!Dia.chaveValida(dia.chave) || !chaves.add(dia.chave)) continue;
+        lidos.add(dia);
+      }
+      // Um plano sem nenhum dia válido não serve: cai no template.
+      if (lidos.isNotEmpty) plano = lidos;
+    }
+
     return EstadoSemana(
       marcadas: marcadas,
       comodos: comodos.isEmpty ? comodosPadrao() : comodos,
+      dias: plano,
     );
   }
 

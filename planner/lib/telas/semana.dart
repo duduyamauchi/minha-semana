@@ -5,6 +5,7 @@ import 'package:planner_ui/planner_ui.dart';
 import '../core/cores.dart';
 
 import '../widgets/abas_dia.dart';
+import '../widgets/editor_atividade.dart';
 import '../widgets/linha_atividade.dart';
 import '../widgets/secao_comodos.dart';
 
@@ -159,9 +160,13 @@ class _TelaSemanaState extends State<TelaSemana> {
                     dia: dia,
                     hoje: selecionado == indiceHoje,
                     semana: rep.semana,
-                    onAlternar: (atividade) {
-                      rep.alternar(atividade);
-                    },
+                    editavel: rep.permiteEscrita,
+                    onAlternar: rep.alternar,
+                    onEditar: (atividade) =>
+                        _abrirEditor(atividade, nova: false),
+                    onExcluir: (atividade) => _excluir(atividade),
+                    onNova: () =>
+                        _abrirEditor(rep.novaAtividade(dia.chave), nova: true),
                   ),
                   const SizedBox(height: 28),
                   SecaoComodos(
@@ -202,6 +207,73 @@ class _TelaSemanaState extends State<TelaSemana> {
         ),
       ),
     );
+  }
+
+  /// Abre o editor e aplica o resultado.
+  ///
+  /// O editor devolve a intenção (salvar/excluir) em vez de gravar sozinho: a
+  /// escrita passa pelo repositório, que atualiza a tela, persiste e instrumenta.
+  Future<void> _abrirEditor(Atividade atividade, {required bool nova}) async {
+    final rep = widget.repositorio;
+    final resultado = await abrirEditorAtividade(
+      context,
+      atividade: atividade,
+      nova: nova,
+    );
+    if (!mounted || resultado == null) return;
+
+    switch (resultado) {
+      case SalvarAtividade(:final atividade):
+        final ok = await rep.salvarAtividade(atividade);
+        if (!mounted) return;
+        if (ok) {
+          _avisar(
+            context,
+            nova ? 'Atividade adicionada.' : 'Atividade atualizada.',
+          );
+        } else if (rep.erro != null) {
+          _avisar(context, rep.erro!);
+        }
+      case ExcluirAtividade(:final atividade):
+        final ok = await rep.removerAtividade(atividade);
+        if (!mounted) return;
+        if (ok) {
+          _avisar(context, '“${atividade.titulo}” foi excluída.');
+        } else if (rep.erro != null) {
+          _avisar(context, rep.erro!);
+        }
+    }
+  }
+
+  /// Excluir pelo menu da linha, com desfazer.
+  ///
+  /// Diferente do editor (que já pede confirmação), aqui a ação é imediata e o
+  /// desfazer recoloca a atividade com o mesmo id — e, se ela estava concluída,
+  /// a marcação volta junto.
+  Future<void> _excluir(Atividade atividade) async {
+    final rep = widget.repositorio;
+    final estavaFeita = rep.semana.concluida(atividade);
+    final ok = await rep.removerAtividade(atividade);
+    if (!mounted) return;
+    if (!ok) {
+      if (rep.erro != null) _avisar(context, rep.erro!);
+      return;
+    }
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('“${atividade.titulo}” foi excluída.'),
+          action: SnackBarAction(
+            label: 'Desfazer',
+            onPressed: () async {
+              await rep.salvarAtividade(atividade);
+              if (estavaFeita) await rep.marcar(atividade, concluida: true);
+            },
+          ),
+        ),
+      );
   }
 
   void _avisar(BuildContext context, String mensagem) {
@@ -356,12 +428,20 @@ class _DiaSelecionado extends StatelessWidget {
     required this.hoje,
     required this.semana,
     required this.onAlternar,
+    required this.onEditar,
+    required this.onExcluir,
+    required this.onNova,
+    required this.editavel,
   });
 
   final Dia dia;
   final bool hoje;
   final Semana semana;
   final void Function(Atividade atividade) onAlternar;
+  final void Function(Atividade atividade) onEditar;
+  final void Function(Atividade atividade) onExcluir;
+  final VoidCallback onNova;
+  final bool editavel;
 
   @override
   Widget build(BuildContext context) {
@@ -393,17 +473,47 @@ class _DiaSelecionado extends StatelessWidget {
           ),
           child: Column(
             children: [
-              for (final atividade in dia.atividades)
+              if (dia.atividades.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 22),
+                  child: Center(
+                    child: Text(
+                      'Nenhuma atividade neste dia ainda.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: paleta.textoSecundario,
+                      ),
+                    ),
+                  ),
+                ),
+              // A ordem é sempre por horário: editar o horário reposiciona a
+              // linha em vez de deixá-la fora de sequência.
+              for (final atividade in dia.ordenadas)
                 LinhaAtividade(
                   key: ValueKey(atividade.id),
                   atividade: atividade,
                   concluida: semana.concluida(atividade),
                   estreito: estreito,
+                  editavel: editavel,
                   onAlternar: () => onAlternar(atividade),
+                  onEditar: () => onEditar(atividade),
+                  onExcluir: () => onExcluir(atividade),
                 ),
             ],
           ),
         ),
+        if (editavel) ...[
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: BotaoUi(
+              rotulo: 'Adicionar atividade',
+              icone: Icons.add,
+              secundario: true,
+              onPressed: onNova,
+            ),
+          ),
+        ],
       ],
     );
   }

@@ -72,6 +72,30 @@ create table if not exists atividades_concluidas (
   primary key (quadro_id, atividade_id)
 );
 
+-- Plano do usuário: uma linha por atividade de um dia.
+--
+-- O plano deixou de ser código no app e passou a ser dado: por isso esta tabela.
+-- `id` é opaco e estável (o app não usa o horário como identidade), então editar
+-- horário ou duração não perde a marcação em `atividades_concluidas`.
+create table if not exists atividades (
+  quadro_id       uuid not null references quadros(id) on delete cascade,
+  dia             text not null check (dia in ('seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom')),
+  id              text not null,
+  horario         text not null check (horario ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
+  titulo          text not null,
+  detalhe         text not null default '',
+  duracao_minutos integer check (duracao_minutos is null or duracao_minutos between 1 and 1440),
+  categoria       text not null default 'casa'
+                  check (categoria in ('estudo', 'movimento', 'casa', 'bemEstar')),
+  fixo            boolean not null default false,
+  prioridade      boolean not null default false,
+  atualizado_em   timestamptz not null default now(),
+  primary key (quadro_id, id)
+);
+
+-- Leitura é sempre "as atividades deste dia, em ordem".
+create index if not exists atividades_dia_idx on atividades (quadro_id, dia, horario);
+
 -- Cômodos da reorganização. `ordem` preserva a ordem em que a pessoa os criou.
 create table if not exists comodos (
   quadro_id  uuid not null references quadros(id) on delete cascade,

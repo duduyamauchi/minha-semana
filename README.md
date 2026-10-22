@@ -1,8 +1,8 @@
 # Minha Semana
 
-Planejador semanal em Flutter, a partir do `Minha Semana.html`: a rotina da
-semana (acordar às 6h, dormir às 22h), a reorganização da casa por cômodo e o
-progresso salvo. Funciona **sem conta** (estado no aparelho) e, com a API
+Planejador semanal em Flutter, a partir do `Minha Semana.html`. O plano é
+**editável**: cada dia aceita criar, editar e excluir atividades, com horário e
+duração próprios. O progresso fica salvo. Funciona **sem conta** (estado no aparelho) e, com a API
 publicada, **sincroniza na nuvem** entre aparelhos.
 
 | Projeto | O que é | Plataformas |
@@ -35,6 +35,9 @@ Sem argumentos de build, o app usa o armazenamento do aparelho. O template não
 fica no banco: ele é compilado no app, então mudar a rotina não exige migração.
 
 **Escrita exige login.** O plano é pessoal: nem a leitura da semana é pública.
+
+**O plano é dado, não código.** O que vem do HTML é só a semente da primeira
+abertura; dali em diante, criar/editar/excluir atividades é operação de tela.
 
 ### Segurança
 

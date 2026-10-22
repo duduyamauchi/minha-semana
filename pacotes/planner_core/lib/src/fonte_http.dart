@@ -118,8 +118,22 @@ class FonteHttp implements FonteDeDados {
   }
 
   @override
-  Future<void> definirAtividade(String id, {required bool concluida}) =>
+  Future<void> definirConcluida(String id, {required bool concluida}) =>
       _enviar('PUT', '/atividades/${Uri.encodeComponent(id)}', {'concluida': concluida});
+
+  @override
+  Future<void> salvarAtividade(Atividade atividade) => _enviar(
+    'PUT',
+    '/dias/${Uri.encodeComponent(atividade.dia)}/atividades/${Uri.encodeComponent(atividade.id)}',
+    atividade.toJson(),
+  );
+
+  @override
+  Future<void> removerAtividade(String dia, String id) => _enviar(
+    'DELETE',
+    '/dias/${Uri.encodeComponent(dia)}/atividades/${Uri.encodeComponent(id)}',
+    null,
+  );
 
   @override
   Future<void> limparMarcacoes() => _enviar('DELETE', '/atividades', null);

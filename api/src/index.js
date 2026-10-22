@@ -174,6 +174,16 @@ function dataIso(valor, campo, { obrigatorio = false } = {}) {
   return d.toISOString();
 }
 
+/** Inteiro dentro de um intervalo; ausente devolve o padrão. */
+function inteiro(valor, campo, { min = 0, max = 1_000_000, padrao = 0 } = {}) {
+  if (valor == null || valor === '') return padrao;
+  const n = Number(valor);
+  if (!Number.isFinite(n)) throw new ErroValidacao(`Campo ${campo} deve ser numérico.`);
+  const i = Math.trunc(n);
+  if (i < min || i > max) throw new ErroValidacao(`Campo ${campo} fora do intervalo.`);
+  return i;
+}
+
 function decimal(valor, campo, { min = 0, max = 100_000, padrao = 0 } = {}) {
   if (valor == null || valor === '') return padrao;
   const n = Number(valor);
@@ -195,28 +205,117 @@ function normalizarComodo(valor, idForcado = null) {
 // Leitura e escrita da semana
 // ---------------------------------------------------------------------------
 
+/// Nomes dos dias, na ordem da semana.
+const DIAS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];
+
+/// Categorias aceitas (as mesmas do app).
+const CATEGORIAS = ['estudo', 'movimento', 'casa', 'bemEstar'];
+
 /**
- * Lê o estado da semana (marcações e cômodos) de um quadro.
+ * Lê o estado da semana: plano, marcações e cômodos de um quadro.
  *
- * Duas consultas, não N+1: o volume é pequeno (uma linha por atividade marcada
- * e uma por cômodo), e o Worker tem limite de subrequests.
+ * Três consultas em paralelo, não N+1: o volume é pequeno (uma linha por
+ * atividade do plano, uma por marcada) e o Worker tem limite de subrequests.
+ *
+ * `dias` só aparece quando há plano gravado. O app usa a ausência para migrar:
+ * estados antigos (v2) eram só marcações, e o template vinha compilado.
  */
 async function lerSemana(sql, quadroId) {
-  const [marcadas, comodos] = await Promise.all([
+  const [atividades, marcadas, comodos] = await Promise.all([
+    sql`
+      select dia, id, horario, titulo, detalhe, duracao_minutos, categoria, fixo, prioridade
+      from atividades where quadro_id = ${quadroId}
+      order by dia, horario, id
+    `,
     sql`select atividade_id from atividades_concluidas where quadro_id = ${quadroId} order by atividade_id`,
-    sql`select id, nome, concluido from comodos where quadro_id = ${quadroId} order by nome`,
+    sql`select id, nome, concluido from comodos where quadro_id = ${quadroId} order by ordem, nome`,
   ]);
-  return {
-    versao: 2,
+
+  const porDia = new Map(DIAS.map((d) => [d, []]));
+  for (const a of atividades) {
+    const lista = porDia.get(a.dia);
+    if (!lista) continue;
+    lista.push({
+      id: a.id,
+      dia: a.dia,
+      horario: a.horario,
+      titulo: a.titulo,
+      detalhe: a.detalhe,
+      duracaoMinutos: a.duracao_minutos == null ? null : Number(a.duracao_minutos),
+      categoria: a.categoria,
+      fixo: a.fixo,
+      prioridade: a.prioridade,
+    });
+  }
+
+  const corpo = {
+    versao: 3,
     marcadas: marcadas.map((l) => l.atividade_id),
     comodos: comodos.map((c) => ({ id: c.id, nome: c.nome, concluido: c.concluido })),
   };
+  // Plano vazio é ausência válida (a pessoa apagou tudo?) — mas o app só migra
+  // quando `dias` não vem. Enviar dias vazios faria o app perder o template.
+  if (atividades.length) {
+    corpo.dias = DIAS.filter((d) => porDia.get(d).length).map((d) => ({
+      chave: d,
+      atividades: porDia.get(d),
+    }));
+  }
+  return corpo;
 }
 
-/** Substitui o estado inteiro numa transação (importação de backup). */
+/** Atividade vinda do app, validada e normalizada. */
+function normalizarAtividade(valor, dia, idForcado = null) {
+  const o = objeto(valor, 'atividade');
+  const id = idForcado ?? identificador(o.id, 'id');
+  const horario = texto(o.horario, 'horario', { max: 5, obrigatorio: true });
+  if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(horario)) {
+    throw new ErroValidacao('Campo horario deve estar no formato HH:mm.');
+  }
+  const categoria = texto(o.categoria, 'categoria', { max: 20, padrao: 'casa' });
+  if (!CATEGORIAS.includes(categoria)) {
+    throw new ErroValidacao(`Categoria desconhecida: ${categoria}.`);
+  }
+  const duracao = o.duracaoMinutos == null ? null : inteiro(o.duracaoMinutos, 'duracaoMinutos', {
+    min: 1,
+    max: 1440,
+  });
+  return {
+    id,
+    dia,
+    horario,
+    titulo: texto(o.titulo, 'titulo', { max: 120, obrigatorio: true }),
+    detalhe: texto(o.detalhe, 'detalhe', { max: 300 }),
+    duracaoMinutos: duracao,
+    categoria,
+    fixo: o.fixo === true,
+    prioridade: o.prioridade === true,
+  };
+}
+
+/** Grava (insert/update) uma atividade do plano. */
+async function gravarAtividade(sql, quadroId, atividade) {
+  await sql`
+    insert into atividades (quadro_id, dia, id, horario, titulo, detalhe,
+                            duracao_minutos, categoria, fixo, prioridade)
+    values (${quadroId}, ${atividade.dia}, ${atividade.id}, ${atividade.horario},
+            ${atividade.titulo}, ${atividade.detalhe}, ${atividade.duracaoMinutos},
+            ${atividade.categoria}, ${atividade.fixo}, ${atividade.prioridade})
+    on conflict (quadro_id, id) do update
+      set dia = excluded.dia, horario = excluded.horario, titulo = excluded.titulo,
+          detalhe = excluded.detalhe, duracao_minutos = excluded.duracao_minutos,
+          categoria = excluded.categoria, fixo = excluded.fixo,
+          prioridade = excluded.prioridade, atualizado_em = now()
+  `;
+}
+
+/** Substitui o estado inteiro (importação de backup). */
 async function gravarSemana(sql, quadroId, estado) {
   await sql`delete from atividades_concluidas where quadro_id = ${quadroId}`;
   await sql`delete from comodos where quadro_id = ${quadroId}`;
+  if (estado.substituirPlano) {
+    await sql`delete from atividades where quadro_id = ${quadroId}`;
+  }
 
   const marcadas = estado.marcadas;
   if (marcadas.length) {
@@ -226,6 +325,24 @@ async function gravarSemana(sql, quadroId, estado) {
       insert into atividades_concluidas (quadro_id, atividade_id)
       select ${quadroId}, unnest(${marcadas}::text[])
       on conflict do nothing
+    `;
+  }
+
+  // Plano: um `insert` com `unnest`, pelo mesmo motivo das marcações.
+  if (estado.atividades.length) {
+    const a = estado.atividades;
+    await sql`
+      insert into atividades (quadro_id, dia, id, horario, titulo, detalhe,
+                              duracao_minutos, categoria, fixo, prioridade)
+      select ${quadroId}, dia, id, horario, titulo, detalhe, duracao, categoria, fixo, prioridade
+      from unnest(
+        ${a.map((x) => x.dia)}::text[], ${a.map((x) => x.id)}::text[],
+        ${a.map((x) => x.horario)}::text[], ${a.map((x) => x.titulo)}::text[],
+        ${a.map((x) => x.detalhe)}::text[], ${a.map((x) => x.duracaoMinutos)}::int[],
+        ${a.map((x) => x.categoria)}::text[], ${a.map((x) => x.fixo)}::boolean[],
+        ${a.map((x) => x.prioridade)}::boolean[]
+      ) as t(dia, id, horario, titulo, detalhe, duracao, categoria, fixo, prioridade)
+      on conflict (quadro_id, id) do nothing
     `;
   }
 
@@ -289,6 +406,7 @@ const ROTAS = {
   sessao: 'login, logout e identidade',
   semana: 'estado completo da semana',
   atividades: 'marcações individuais',
+  dias: 'plano editável: atividades de um dia',
   comodos: 'lista de reorganização',
   eventos: 'telemetria',
 };
@@ -459,10 +577,56 @@ export async function tratar(request, env, sql) {
           const corpo = await lerJson(request);
           const marcadas = listaDe(corpo.marcadas, 'marcadas').map((m) => identificador(m, 'marcada'));
           const comodos = listaDe(corpo.comodos, 'comodos').map((c) => normalizarComodo(c));
-          await gravarSemana(sql, acesso.quadroId, { marcadas, comodos });
+          // Plano é opcional na carga: ausente significa "não mexe no plano".
+          // É assim que um backup v2 (sem dias) continua válido.
+          const atividades = [];
+          for (const d of listaDe(corpo.dias, 'dias')) {
+            const dia = objeto(d, 'dia');
+            const chave = texto(dia.chave, 'chave', { max: 3, obrigatorio: true });
+            if (!DIAS.includes(chave)) throw new ErroValidacao(`Dia inválido: ${chave}.`);
+            for (const a of listaDe(dia.atividades, 'atividades')) {
+              atividades.push(normalizarAtividade(a, chave));
+            }
+          }
+          await gravarSemana(sql, acesso.quadroId, {
+            marcadas,
+            comodos,
+            atividades,
+            substituirPlano: Array.isArray(corpo.dias),
+          });
           return responder(await lerSemana(sql, acesso.quadroId));
         }
         return erro('Método não permitido em /semana.', 405, { cabecalhos: base });
+      }
+
+      // PUT /dias/:dia/atividades/:id — cria ou edita uma atividade do plano
+      if (partes[0] === 'dias' && partes[1] && partes[2] === 'atividades') {
+        const dia = texto(decodeURIComponent(partes[1]), 'dia', { max: 3, obrigatorio: true });
+        if (!DIAS.includes(dia)) return erro(`Dia inválido: ${dia}.`, 400, { cabecalhos: base });
+
+        if (request.method === 'PUT' && partes[3]) {
+          if (!podeEscrever) return recusarEscrita();
+          const id = identificador(decodeURIComponent(partes[3]), 'id');
+          const atividade = normalizarAtividade(await lerJson(request), dia, id);
+          await gravarAtividade(sql, acesso.quadroId, atividade);
+          return responder({ ok: true, atividade });
+        }
+
+        if (request.method === 'DELETE' && partes[3]) {
+          if (!podeEscrever) return recusarEscrita();
+          const id = identificador(decodeURIComponent(partes[3]), 'id');
+          await sql`
+            delete from atividades where quadro_id = ${acesso.quadroId} and id = ${id} and dia = ${dia}
+          `;
+          // A marcação não pode sobreviver à atividade removida: senão o
+          // percentual contaria um id que não existe mais.
+          await sql`
+            delete from atividades_concluidas where quadro_id = ${acesso.quadroId} and atividade_id = ${id}
+          `;
+          return responder({ ok: true, id });
+        }
+
+        return erro('Método não permitido em /dias/:dia/atividades.', 405, { cabecalhos: base });
       }
 
       // PUT /atividades/:id — marca/desmarca uma atividade

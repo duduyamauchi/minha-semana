@@ -1,15 +1,15 @@
+import 'dados_semana.dart';
 import 'modelos.dart';
 
 /// Contrato de qualquer origem de dados do aplicativo.
 ///
 /// O app inteiro conhece só esta interface. Trocar `local` (o padrão, estado no
-/// próprio aparelho) por `http` (Worker + Postgres) é trocar uma implementação
-/// — nenhuma tela muda.
+/// próprio aparelho) por `http` (Pages Function + Postgres) é trocar uma
+/// implementação — nenhuma tela muda.
 ///
-/// A gravação é **por entidade** (`definirAtividade`, `salvarComodo`), não
-/// "salvar a semana inteira". Dois aparelhos marcando atividades diferentes não
-/// se sobrescrevem; `salvar` existe como fallback para carga em lote e para
-/// fontes que não suportam escrita granular.
+/// A gravação é **por entidade**: uma marcação, uma atividade, um cômodo. Dois
+/// aparelhos mexendo em registros diferentes não se sobrescrevem; `salvar`
+/// existe para carga em lote e para a importação de backup.
 abstract interface class FonteDeDados {
   /// Nome curto exibido na tela de ajustes (ex.: `Neste aparelho`, `API`).
   String get descricao;
@@ -29,14 +29,24 @@ abstract interface class FonteDeDados {
   /// Persiste o estado completo e devolve o que foi efetivamente gravado.
   ///
   /// Usado na primeira gravação e na importação de um backup. **Não** é o
-  /// caminho do dia a dia: para marcar uma atividade, use [definirAtividade].
+  /// caminho do dia a dia: para marcar uma atividade, use [definirConcluida].
   Future<EstadoSemana> salvar(EstadoSemana estado);
 
-  /// Marca ou desmarca uma atividade (`seg-06:00`).
-  Future<void> definirAtividade(String id, {required bool concluida});
+  /// Marca ou desmarca uma atividade.
+  Future<void> definirConcluida(String id, {required bool concluida});
 
-  /// Desmarca a semana inteira, preservando os cômodos.
+  /// Desmarca a semana inteira, preservando o plano e os cômodos.
   Future<void> limparMarcacoes();
+
+  /// Insere ou atualiza uma atividade do plano.
+  ///
+  /// A identidade é `Atividade.id`; o dia vem em `Atividade.dia`. Editar
+  /// horário ou duração é o mesmo caminho — não muda o id, então a marcação da
+  /// atividade sobrevive.
+  Future<void> salvarAtividade(Atividade atividade);
+
+  /// Remove uma atividade do plano (e a marcação dela, no servidor).
+  Future<void> removerAtividade(String dia, String id);
 
   /// Insere ou atualiza um cômodo, identificado por [Comodo.id].
   Future<void> salvarComodo(Comodo comodo);
@@ -77,21 +87,56 @@ mixin GravacaoGranular implements FonteDeDados {
     estadoAtual = await salvar(transformacao(estadoAtual));
   }
 
+  /// Plano atual, ou o template do app quando a fonte ainda não guarda dias.
+  List<Dia> _plano() => estadoAtual.dias ?? construirPlanoInicial();
+
   @override
-  Future<void> definirAtividade(String id, {required bool concluida}) => _compor((atual) {
+  Future<void> definirConcluida(String id, {required bool concluida}) => _compor((atual) {
     final marcadas = Set<String>.of(atual.marcadas);
     if (concluida) {
       marcadas.add(id);
     } else {
       marcadas.remove(id);
     }
-    return EstadoSemana(marcadas: marcadas, comodos: atual.comodos);
+    return EstadoSemana(marcadas: marcadas, comodos: atual.comodos, dias: atual.dias);
   });
 
   @override
   Future<void> limparMarcacoes() => _compor(
-    (atual) => EstadoSemana(marcadas: const {}, comodos: atual.comodos),
+    (atual) => EstadoSemana(marcadas: const {}, comodos: atual.comodos, dias: atual.dias),
   );
+
+  @override
+  Future<void> salvarAtividade(Atividade atividade) => _compor((atual) {
+    final plano = [..._plano()];
+    final i = plano.indexWhere((d) => d.chave == atividade.dia);
+    if (i < 0) throw ErroFonte('Dia ${atividade.dia} não existe no plano.');
+    final dia = plano[i];
+    final existe = dia.atividades.any((a) => a.id == atividade.id);
+    plano[i] = dia.copiarCom(
+      atividades: existe
+          ? [for (final a in dia.atividades) if (a.id == atividade.id) atividade else a]
+          : [...dia.atividades, atividade],
+    );
+    return EstadoSemana(marcadas: atual.marcadas, comodos: atual.comodos, dias: plano);
+  });
+
+  @override
+  Future<void> removerAtividade(String dia, String id) => _compor((atual) {
+    final plano = [..._plano()];
+    final i = plano.indexWhere((d) => d.chave == dia);
+    if (i < 0) throw ErroFonte('Dia $dia não existe no plano.');
+    final atividades = [
+      for (final a in plano[i].atividades)
+        if (a.id != id) a,
+    ];
+    plano[i] = plano[i].copiarCom(atividades: atividades);
+    return EstadoSemana(
+      marcadas: {...atual.marcadas}..remove(id),
+      comodos: atual.comodos,
+      dias: plano,
+    );
+  });
 
   @override
   Future<void> salvarComodo(Comodo comodo) => _compor((atual) {
@@ -101,6 +146,7 @@ mixin GravacaoGranular implements FonteDeDados {
       comodos: existe
           ? [for (final c in atual.comodos) if (c.id == comodo.id) comodo else c]
           : [...atual.comodos, comodo],
+      dias: atual.dias,
     );
   });
 
@@ -109,6 +155,7 @@ mixin GravacaoGranular implements FonteDeDados {
     (atual) => EstadoSemana(
       marcadas: atual.marcadas,
       comodos: [for (final c in atual.comodos) if (c.id != id) c],
+      dias: atual.dias,
     ),
   );
 }

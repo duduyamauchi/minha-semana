@@ -7,10 +7,21 @@ cada item. Serve para não repetir checagem nem confiar em memória.
 
 | Suíte | Comando | Resultado |
 | --- | --- | --- |
-| Núcleo | `cd pacotes/planner_core && flutter test` | 55 testes |
-| App | `cd planner && flutter test` | 9 testes |
-| API | `cd api && npm test` | 37 testes |
+| Núcleo | `cd pacotes/planner_core && flutter test` | 81 testes |
+| App | `cd planner && flutter test` | 18 testes |
+| API | `cd api && npm test` | 45 testes |
 | Análise estática | `flutter analyze` nos dois pacotes Dart | limpo |
+
+## Plano editável (verificado em produção)
+
+| O que | Evidência |
+| --- | --- |
+| Criar atividade | `PUT /api/dias/seg/atividades/seg-05:55` → 200, `GET /api/semana` com `versao: 3` e a atividade |
+| Editar horário/duração | linha mostra `07:10`, `45 min · até 07:55` |
+| Excluir | `DELETE` → 200 e a atividade some do `GET` |
+| Editor na tela | campos Título, Horário, Duração (h), min, categoria, switches e "Adicionar ao dia" |
+| Menu por linha | "Opções de Acordar" com Editar/Excluir |
+| Semeadura na nuvem | ao abrir com estado v2, o app grava o plano: `PUT /api/semana` e 14 atividades na quarta |
 
 ## Verificação manual no navegador
 

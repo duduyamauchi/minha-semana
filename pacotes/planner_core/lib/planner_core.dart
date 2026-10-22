@@ -19,6 +19,7 @@ export 'src/fonte_http.dart';
 export 'src/fonte_local.dart';
 export 'src/fonte_memoria.dart';
 export 'src/formatos.dart';
+export 'src/horario.dart';
 export 'src/modelos.dart';
 export 'src/repositorio.dart';
 export 'src/sessao.dart';

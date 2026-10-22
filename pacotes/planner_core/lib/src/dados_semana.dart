@@ -1,14 +1,20 @@
-/// Template semanal — a tradução fiel do planejador HTML original.
+/// Plano inicial — a tradução do planejador HTML original.
 ///
-/// A semana é um dado compilado, não um registro no banco: o template só muda
-/// quando o produto muda. O que o usuário altera são as marcações e os cômodos,
-/// e é só isso que a fonte de dados persiste.
+/// **Não é mais o que o app exibe**: o plano é dado do usuário e vive no
+/// `EstadoSemana` (armazenado no aparelho ou no banco). Este arquivo serve para
+/// duas coisas:
 ///
-/// Regras que vinham do arquivo original e foram preservadas:
+/// 1. semente: a primeira abertura de quem nunca usou o app;
+/// 2. migração: estados gravados no formato v2 (antes da edição existir) não
+///    tinham plano, e passam a usar esta semana como ponto de partida.
+///
+/// Depois disso, criar, editar e excluir atividades não toca neste arquivo.
+///
+/// Regras que vinham do original e foram preservadas na semente:
 /// - acordar às 6h, dormir às 22h;
 /// - café, almoço, jantar e telas de desaceleração em todos os dias;
-/// - dias pares (ter/qui) alternam academia e pilates com blocos de
-///   reorganização; segunda e quarta são dias inteiros de reorganização;
+/// - terça e quinta alternam academia e pilates com blocos de reorganização;
+///   segunda e quarta são dias inteiros de reorganização;
 /// - sábado troca o Inglês pela limpeza completa; domingo começa mais tarde e
 ///   reserva a tarde para recarregar.
 library;
@@ -26,25 +32,37 @@ Atividade _a(
   String horario,
   String titulo, {
   String detalhe = '',
+  int? duracaoMinutos,
   required Categoria categoria,
   bool fixo = false,
   bool prioridade = false,
 }) => Atividade(
   id: Atividade.chavear(dia, horario),
+  dia: dia,
   horario: horario,
   titulo: titulo,
   detalhe: detalhe,
+  duracaoMinutos: duracaoMinutos,
   categoria: categoria,
   fixo: fixo,
   prioridade: prioridade,
 );
 
 /// Bloco de reorganização: título fixo, duração e objetivo no detalhe.
-Atividade _reorganizacao(String dia, String horario, String duracao, [String objetivo = '']) => _a(
+///
+/// A duração agora é campo próprio (`duracaoMinutos`), não texto dentro do
+/// detalhe — é o que permite editar horas e minutos de verdade.
+Atividade _reorganizacao(
+  String dia,
+  String horario,
+  int minutos, [
+  String objetivo = '',
+]) => _a(
   dia,
   horario,
   'Reorganização',
-  detalhe: objetivo.isEmpty ? duracao : '$duracao · $objetivo',
+  detalhe: objetivo,
+  duracaoMinutos: minutos,
   categoria: Categoria.casa,
   prioridade: _prio,
 );
@@ -72,18 +90,39 @@ List<Atividade> _manha(String dia) => [
     categoria: Categoria.casa,
   ),
   _a(dia, '06:40', 'Café da manhã', detalhe: 'Sem tela', categoria: Categoria.bemEstar),
-  _a(dia, '07:10', 'Inglês', detalhe: '45 minutos', categoria: Categoria.estudo),
-  _a(dia, '08:00', 'Aula do curso XYZ', detalhe: 'Uma aula + anotações', categoria: Categoria.estudo),
+  _a(
+    dia,
+    '07:10',
+    'Inglês',
+    detalhe: 'Aula e revisão',
+    duracaoMinutos: 45,
+    categoria: Categoria.estudo,
+  ),
+  _a(
+    dia,
+    '08:00',
+    'Aula do curso XYZ',
+    detalhe: 'Uma aula + anotações',
+    duracaoMinutos: 60,
+    categoria: Categoria.estudo,
+  ),
 ];
 
 List<Atividade> _almoco(String dia) => [
-  _a(dia, '12:30', 'Almoço', categoria: Categoria.bemEstar),
+  _a(dia, '12:30', 'Almoço', duracaoMinutos: 60, categoria: Categoria.bemEstar),
 ];
 
 /// Fim do dia: banho, leitura, preparação de amanhã e desaceleração.
 List<Atividade> _noite(String dia) => [
   _a(dia, '18:30', 'Banho e jantar', categoria: Categoria.bemEstar),
-  _a(dia, '19:30', 'Leitura', detalhe: '40 a 60 minutos do livro', categoria: Categoria.estudo),
+  _a(
+    dia,
+    '19:30',
+    'Leitura',
+    detalhe: '40 a 60 minutos do livro',
+    duracaoMinutos: 60,
+    categoria: Categoria.estudo,
+  ),
   _a(
     dia,
     '20:30',
@@ -98,9 +137,9 @@ List<Atividade> _noite(String dia) => [
 /// Segunda e quarta: reorganização o dia inteiro, um cômodo por vez.
 List<Atividade> _diaLongo(String dia, String alvo) => [
   ..._manha(dia),
-  _reorganizacao(dia, '09:00', '3h30', 'um cômodo ou categoria por vez'),
+  _reorganizacao(dia, '09:00', 210, 'Um cômodo ou categoria por vez'),
   ..._almoco(dia),
-  _reorganizacao(dia, '13:30', '4h', 'continuar até fechar o cômodo'),
+  _reorganizacao(dia, '13:30', 240, 'Continuar até fechar o cômodo'),
   _foco(dia, '17:30', alvo),
   ..._noite(dia),
 ];
@@ -109,7 +148,7 @@ List<Atividade> _diaLongo(String dia, String alvo) => [
 /// reorganização, limpeza curta antes do jantar.
 List<Atividade> _diaAcademia(String dia, String alvo, List<Atividade> tarde) => [
   ..._manha(dia),
-  _reorganizacao(dia, '09:00', '1h30'),
+  _reorganizacao(dia, '09:00', 90),
   _a(
     dia,
     '10:30',
@@ -117,7 +156,14 @@ List<Atividade> _diaAcademia(String dia, String alvo, List<Atividade> tarde) => 
     detalhe: 'Bolsa pronta desde a noite anterior',
     categoria: Categoria.movimento,
   ),
-  _a(dia, '11:00', 'Academia', categoria: Categoria.movimento, fixo: _fixo),
+  _a(
+    dia,
+    '11:00',
+    'Academia',
+    duracaoMinutos: 90,
+    categoria: Categoria.movimento,
+    fixo: _fixo,
+  ),
   ..._almoco(dia),
   ...tarde,
   _foco(dia, '18:00', alvo),
@@ -126,15 +172,15 @@ List<Atividade> _diaAcademia(String dia, String alvo, List<Atividade> tarde) => 
 
 /// Tarde de terça e quinta: pilates às 15h, cercado de reorganização.
 List<Atividade> _tardePilates(String dia) => [
-  _reorganizacao(dia, '13:30', '1h'),
+  _reorganizacao(dia, '13:30', 60),
   _a(dia, '14:30', 'Preparar para o pilates', categoria: Categoria.movimento),
-  _a(dia, '15:00', 'Pilates', categoria: Categoria.movimento, fixo: _fixo),
-  _reorganizacao(dia, '16:15', '1h45'),
+  _a(dia, '15:00', 'Pilates', duracaoMinutos: 60, categoria: Categoria.movimento, fixo: _fixo),
+  _reorganizacao(dia, '16:15', 105),
 ];
 
 /// Tarde de sexta: fechar o que ficou pela metade na semana.
 List<Atividade> _tardeSexta(String dia) => [
-  _reorganizacao(dia, '13:30', '4h', 'fechar o que ficou pela metade na semana'),
+  _reorganizacao(dia, '13:30', 240, 'Fechar o que ficou pela metade na semana'),
 ];
 
 /// Sábado: limpeza completa no lugar da aula, reorganização o resto do dia.
@@ -144,32 +190,34 @@ List<Atividade> _sabado(String dia) => [
     dia,
     '07:10',
     'Limpeza completa',
-    detalhe: '1h30, incluindo trocar roupa de cama e toalhas',
+    detalhe: 'Inclui trocar roupa de cama e toalhas',
+    duracaoMinutos: 90,
     categoria: Categoria.casa,
   ),
-  _reorganizacao(dia, '09:00', '3h30'),
+  _reorganizacao(dia, '09:00', 210),
   ..._almoco(dia),
-  _reorganizacao(dia, '13:30', '4h'),
+  _reorganizacao(dia, '13:30', 240),
   ..._noite(dia),
 ];
 
 /// Domingo: reorganização de manhã, tarde de recarga e planejamento.
 List<Atividade> _domingo(String dia) => [
   ..._manha(dia).take(3),
-  _reorganizacao(dia, '07:30', '4h30'),
+  _reorganizacao(dia, '07:30', 270),
   ..._almoco(dia),
   _a(dia, '13:30', 'Descanso', detalhe: 'Recarregar para a semana', categoria: Categoria.bemEstar),
   _a(
     dia,
     '17:00',
     'Planejar a semana',
-    detalhe: '20 min: próximos cômodos, compras, horários',
+    detalhe: 'Próximos cômodos, compras, horários',
+    duracaoMinutos: 20,
     categoria: Categoria.bemEstar,
   ),
   ..._noite(dia),
 ];
 
-/// O template completo, na ordem de segunda a domingo.
+/// O plano inicial, na ordem de segunda a domingo.
 List<Dia> construirSemana() => [
   Dia(
     chave: 'seg',
@@ -215,5 +263,13 @@ List<Dia> construirSemana() => [
   ),
 ];
 
-/// Semana recém-criada: template completo, nada marcado, cômodos padrão.
-Semana semanaInicial() => Semana(dias: construirSemana(), marcadas: const {}, comodos: comodosPadrao());
+/// Plano inicial, sem estado: o que a fonte usa quando ainda não há dias
+/// gravados (primeira abertura e migração do formato v2).
+List<Dia> construirPlanoInicial() => construirSemana();
+
+/// Semana recém-criada: plano inicial, nada marcado, cômodos padrão.
+Semana semanaInicial() => Semana(
+  dias: construirSemana(),
+  marcadas: const {},
+  comodos: comodosPadrao(),
+);

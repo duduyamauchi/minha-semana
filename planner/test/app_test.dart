@@ -32,15 +32,18 @@ void main() {
     expect(hoje, inInclusiveRange(0, 6));
   });
 
-  testWidgets('marcar uma atividade atualiza o checkbox e o percentual', (tester) async {
+  testWidgets('marcar uma atividade atualiza o checkbox e o percentual', (
+    tester,
+  ) async {
     final rep = await _montar(tester);
 
-    // Primeira atividade do dia visível: "Acordar".
+    // Primeira atividade do dia visível: "Acordar". O checkbox é alvo próprio:
+    // tocar na linha abre o editor.
     expect(find.text('Acordar'), findsOneWidget);
-    await tester.tap(find.text('Acordar'));
+    final marcada = rep.dias[rep.indiceHoje].atividades.first.id;
+    await tester.tap(find.byKey(ValueKey('marcar-$marcada')));
     await tester.pumpAndSettle();
 
-    final marcada = rep.dias[rep.indiceHoje].atividades.first.id;
     expect(rep.semana.marcadas, contains(marcada));
     // O percentual sobe acima de zero depois da primeira marcação.
     expect(rep.percentual, greaterThan(0));
@@ -54,12 +57,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Limpeza completa'), findsOneWidget);
-    expect(find.textContaining('Limpeza completa e reorganização'), findsOneWidget);
+    expect(
+      find.textContaining('Limpeza completa e reorganização'),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('"Começar nova semana" pede confirmação e desmarca tudo', (tester) async {
+  testWidgets('"Começar nova semana" pede confirmação e desmarca tudo', (
+    tester,
+  ) async {
     final rep = await _montar(tester);
-    await tester.tap(find.text('Acordar'));
+    await tester.tap(
+      find.byKey(
+        ValueKey('marcar-${rep.dias[rep.indiceHoje].atividades.first.id}'),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(rep.semana.marcadas, isNotEmpty);
 
@@ -76,7 +88,11 @@ void main() {
 
   testWidgets('cancelar a nova semana não desmarca nada', (tester) async {
     final rep = await _montar(tester);
-    await tester.tap(find.text('Acordar'));
+    await tester.tap(
+      find.byKey(
+        ValueKey('marcar-${rep.dias[rep.indiceHoje].atividades.first.id}'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Começar nova semana'));
@@ -162,41 +178,45 @@ void main() {
 
 void _rotasTeste() {
   group('rota pedida antes do login', () {
-    testWidgets('link profundo sem sessão volta para o dia pedido depois de entrar', (tester) async {
-      tester.view.physicalSize = const Size(1000, 2400);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
+    testWidgets(
+      'link profundo sem sessão volta para o dia pedido depois de entrar',
+      (tester) async {
+        tester.view.physicalSize = const Size(1000, 2400);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
 
-      final rep = Repositorio(FonteMemoria());
-      await rep.carregar();
-      final sessao = ValueNotifier<Sessao?>(null);
-      final rotas = Rotas(
-        repositorio: rep,
-        exigeLogin: true,
-        sessao: sessao,
-        aoEntrar: (_, _) async => const Sessao(usuario: 'sarah', papel: 'proprietario'),
-        aoSair: () async {},
-      ).criar();
+        final rep = Repositorio(FonteMemoria());
+        await rep.carregar();
+        final sessao = ValueNotifier<Sessao?>(null);
+        final rotas = Rotas(
+          repositorio: rep,
+          exigeLogin: true,
+          sessao: sessao,
+          aoEntrar: (_, _) async =>
+              const Sessao(usuario: 'sarah', papel: 'proprietario'),
+          aoSair: () async {},
+        ).criar();
 
-      await tester.pumpWidget(
-        EscopoUi(
-          paleta: PaletaUi.clara,
-          child: MaterialApp.router(routerConfig: rotas),
-        ),
-      );
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          EscopoUi(
+            paleta: PaletaUi.clara,
+            child: MaterialApp.router(routerConfig: rotas),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      // Sem sessão: pede login, mas guarda o destino.
-      rotas.go('/dia/dom');
-      await tester.pumpAndSettle();
-      expect(find.text('Entrar'), findsOneWidget);
+        // Sem sessão: pede login, mas guarda o destino.
+        rotas.go('/dia/dom');
+        await tester.pumpAndSettle();
+        expect(find.text('Entrar'), findsOneWidget);
 
-      // Depois de entrar, o app retoma o dia pedido em vez de abrir /semana.
-      sessao.value = const Sessao(usuario: 'sarah', papel: 'proprietario');
-      await tester.pumpAndSettle();
+        // Depois de entrar, o app retoma o dia pedido em vez de abrir /semana.
+        sessao.value = const Sessao(usuario: 'sarah', papel: 'proprietario');
+        await tester.pumpAndSettle();
 
-      expect(rotas.routerDelegate.currentConfiguration.uri.path, '/dia/dom');
-      expect(find.text('Descanso'), findsOneWidget);
-    });
+        expect(rotas.routerDelegate.currentConfiguration.uri.path, '/dia/dom');
+        expect(find.text('Descanso'), findsOneWidget);
+      },
+    );
   });
 }

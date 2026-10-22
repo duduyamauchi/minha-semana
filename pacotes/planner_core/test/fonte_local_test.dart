@@ -22,7 +22,7 @@ void main() {
   test('grava e relê a marcação no aparelho', () async {
     final fonte = FonteLocal();
     await fonte.carregar();
-    await fonte.definirAtividade('seg-06:00', concluida: true);
+    await fonte.definirConcluida('seg-06:00', concluida: true);
     await fonte.salvarComodo(const Comodo(id: 'cozinha', nome: 'Cozinha', concluido: true));
 
     // Uma instância nova simula o app reaberto.
@@ -35,7 +35,7 @@ void main() {
   test('gravar antes de carregar não apaga o que já estava salvo', () async {
     final primeira = FonteLocal();
     await primeira.carregar();
-    await primeira.definirAtividade('ter-11:00', concluida: true);
+    await primeira.definirConcluida('ter-11:00', concluida: true);
 
     final segunda = FonteLocal();
     await segunda.salvarComodo(const Comodo(id: 'sala', nome: 'Sala'));
@@ -47,8 +47,8 @@ void main() {
   test('desmarcar e remover comodo persistem', () async {
     final fonte = FonteLocal();
     await fonte.carregar();
-    await fonte.definirAtividade('seg-06:00', concluida: true);
-    await fonte.definirAtividade('seg-06:00', concluida: false);
+    await fonte.definirConcluida('seg-06:00', concluida: true);
+    await fonte.definirConcluida('seg-06:00', concluida: false);
     await fonte.removerComodo('sala');
 
     final estado = await FonteLocal().carregar();

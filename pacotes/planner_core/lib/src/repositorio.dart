@@ -4,6 +4,7 @@ import 'analytics/analytics.dart';
 import 'analytics/coletor.dart';
 import 'dados_semana.dart';
 import 'fonte_dados.dart';
+import 'horario.dart';
 import 'modelos.dart';
 
 /// Estado de carregamento da semana.
@@ -17,7 +18,11 @@ enum EstadoCarga { inicial, carregando, pronto, erro }
 class Repositorio extends ChangeNotifier {
   Repositorio(this.fonte, {Analytics? analytics, List<Dia>? template})
     : analytics = analytics ?? Analytics(const ColetorNulo()),
-      _semana = Semana(dias: template ?? construirSemana(), marcadas: const {}, comodos: comodosPadrao());
+      _base = template ?? construirPlanoInicial(),
+      _semana = Semana(dias: template ?? construirPlanoInicial(), marcadas: const {}, comodos: comodosPadrao());
+
+  /// Plano de partida: usado só enquanto a fonte não devolve dias (estado v2).
+  final List<Dia> _base;
 
   final FonteDeDados fonte;
 
@@ -68,13 +73,13 @@ class Repositorio extends ChangeNotifier {
       }
       return atual.copiarCom(marcadas: marcadas);
     },
-    gravar: () => fonte.definirAtividade(atividade.id, concluida: concluida),
+    gravar: () => fonte.definirConcluida(atividade.id, concluida: concluida),
     evento: concluida ? 'atividade_concluida' : 'atividade_desmarcada',
     propriedades: {
       'atividade': atividade.titulo,
       'horario': atividade.horario,
       'categoria': atividade.categoria.chave,
-      'dia': atividade.id.split('-').first,
+      'dia': atividade.dia,
     },
     entidade: 'atividade',
     entidadeId: atividade.id,
@@ -84,7 +89,89 @@ class Repositorio extends ChangeNotifier {
   Future<bool> alternar(Atividade atividade) =>
       marcar(atividade, concluida: !_semana.concluida(atividade));
 
-  /// Desmarca a semana inteira, preservando os cômodos.
+  /// Atividade nova, ainda não persistida, no dia indicado.
+  ///
+  /// O id é escolhido aqui (e não na tela) para garantir unicidade: a mesma
+  /// regra vale para o editor e para o botão "adicionar".
+  Atividade novaAtividade(String chaveDia, {String? horario, String? titulo, String? detalhe}) {
+    final atual = _semana.dia(chaveDia) ?? _semana.dias.first;
+    return _semana.novaAtividade(
+      atual.atividades.isNotEmpty
+          ? atual.atividades.last
+          : Atividade(
+              id: Atividade.chavear(atual.chave, '08:00'),
+              dia: atual.chave,
+              horario: '08:00',
+              titulo: '',
+              categoria: Categoria.casa,
+            ),
+      // Sem horário explícito, começa "agora" arredondado para os próximos
+      // 15 min: é o palpite útil quando se cria no meio do dia. O último
+      // horário do dia seria 22:00 (Dormir), o que raramente serve.
+      horario: horario ?? _proximaQuinzena(),
+      titulo: titulo,
+      detalhe: detalhe,
+    );
+  }
+
+  /// Hora atual arredondada para cima em 15 min (mínimo 00:05).
+  String _proximaQuinzena() {
+    final agora = this.agora();
+    final minutos = agora.hour * 60 + agora.minute;
+    final arredondado = ((minutos + 14) ~/ 15) * 15;
+    return Horario.formatar(arredondado);
+  }
+
+  /// Cria ou atualiza uma atividade do plano.
+  ///
+  /// Devolve `false` sem gravar quando o título está vazio ou o horário não é
+  /// válido — validar aqui evita um registro inútil no banco e uma tela
+  /// inconsistente com a fonte.
+  Future<bool> salvarAtividade(Atividade atividade) async {
+    final titulo = atividade.titulo.trim();
+    if (titulo.isEmpty) {
+      _erro = 'A atividade precisa de um título.';
+      notifyListeners();
+      return false;
+    }
+    if (Horario.minutos(atividade.horario) == null) {
+      _erro = 'Horário inválido. Use HH:mm.';
+      notifyListeners();
+      return false;
+    }
+    final normalizada = atividade.copiarCom(
+      titulo: titulo,
+      horario: Horario.normalizar(atividade.horario)!,
+      detalhe: atividade.detalhe.trim(),
+    );
+    final eraNova = _semana.dia(normalizada.dia)?.atividade(normalizada.id) == null;
+    return _aplicar(
+      (atual) => atual.salvarAtividade(normalizada),
+      gravar: () => fonte.salvarAtividade(normalizada),
+      evento: eraNova ? 'atividade_criada' : 'atividade_editada',
+      propriedades: {
+        'atividade': normalizada.titulo,
+        'horario': normalizada.horario,
+        'duracao': normalizada.duracaoMinutos,
+        'categoria': normalizada.categoria.chave,
+        'dia': normalizada.dia,
+      },
+      entidade: 'atividade',
+      entidadeId: normalizada.id,
+    );
+  }
+
+  /// Remove uma atividade (e a marcação dela, se havia).
+  Future<bool> removerAtividade(Atividade atividade) => _aplicar(
+    (atual) => atual.removerAtividade(atividade.dia, atividade.id),
+    gravar: () => fonte.removerAtividade(atividade.dia, atividade.id),
+    evento: 'atividade_removida',
+    propriedades: {'atividade': atividade.titulo, 'dia': atividade.dia},
+    entidade: 'atividade',
+    entidadeId: atividade.id,
+  );
+
+  /// Desmarca a semana inteira, preservando o plano e os cômodos.
   ///
   /// É a ação "Começar nova semana" do planejador original.
   Future<bool> limparMarcacoes() => _aplicar(
@@ -146,7 +233,11 @@ class Repositorio extends ChangeNotifier {
     (_) => _semana.comEstado(novo),
     gravar: () => fonte.salvar(novo),
     evento: 'semana_importada',
-    propriedades: {'marcadas': novo.marcadas.length, 'comodos': novo.comodos.length},
+    propriedades: {
+      'marcadas': novo.marcadas.length,
+      'comodos': novo.comodos.length,
+      'atividades': novo.dias?.fold<int>(0, (s, d) => s + d.atividades.length),
+    },
   );
 
   // ---------------------------------------------------------------------------
@@ -159,14 +250,22 @@ class Repositorio extends ChangeNotifier {
     notifyListeners();
     try {
       final estado = await fonte.carregar();
-      _semana = _semana.comEstado(estado);
+      // Estado sem plano (v2) é migrado para o template no primeiro
+      // carregamento.
+      _semana = Semana(
+        dias: estado.dias ?? _base,
+        marcadas: estado.marcadas,
+        comodos: estado.comodos,
+      );
       _estado = EstadoCarga.pronto;
+      if (estado.dias == null) await _semearPlano();
       analytics.registrar(
         'semana_carregada',
         propriedades: {
           'fonte': fonte.descricao,
           'marcadas': _semana.marcadas.length,
           'comodos': _semana.comodos.length,
+          'atividades': _semana.totalAtividades,
         },
       );
     } on ErroFonte catch (e) {
@@ -179,6 +278,26 @@ class Repositorio extends ChangeNotifier {
       analytics.erro('carregar_semana', '$e', propriedades: {'fonte': fonte.descricao});
     }
     notifyListeners();
+  }
+
+  /// Grava o plano migrado na fonte que ainda não o tinha.
+  ///
+  /// Sem isto, numa fonte remota o plano só existiria na memória do aparelho:
+  /// ao editar uma atividade, o servidor teria uma linha e mais nada, e outro
+  /// aparelho veria um plano quase vazio. A falha aqui não derruba o app — o
+  /// estado carregado continua utilizável e o erro fica visível.
+  Future<void> _semearPlano() async {
+    if (!fonte.permiteEscrita) return;
+    try {
+      await fonte.salvar(_semana.estado);
+      analytics.registrar(
+        'plano_semeado',
+        propriedades: {'fonte': fonte.descricao, 'atividades': _semana.totalAtividades},
+      );
+    } on ErroFonte catch (e) {
+      _erro = e.mensagem;
+      analytics.erro('semear_plano', e.mensagem, propriedades: {'fonte': fonte.descricao});
+    }
   }
 
   /// Aplica a transformação local, persiste e só então registra o evento.

@@ -35,6 +35,8 @@ function banco({ papel = 'proprietario', senhaHash = null } = {}) {
   const estado = {
     marcadas: new Set(),
     comodos: new Map(),
+    // Plano: id -> atividade. Espelha a tabela `atividades`.
+    atividades: new Map(),
     eventos: [],
   };
 
@@ -55,6 +57,40 @@ function banco({ papel = 'proprietario', senhaHash = null } = {}) {
     }
     if (consulta.includes('select atividade_id from atividades_concluidas')) {
       return [...estado.marcadas].sort().map((id) => ({ atividade_id: id }));
+    }
+    if (consulta.includes('delete from atividades where')) {
+      // Sem id no `where` (substituição total), limpa o plano inteiro.
+      if (valores.length > 1 && valores[1] !== undefined) {
+        estado.atividades.delete(valores[1]);
+      } else {
+        estado.atividades.clear();
+      }
+      return [];
+    }
+    if (consulta.includes('insert into atividades (quadro_id, dia, id')) {
+      // `values (quadroId, dia, id, horario, …)` e, no lote, `select quadroId,
+      // dia, id, …` — mesma ordem nos dois casos.
+      const [, dia, id, horario, titulo, detalhe, duracao, categoria, fixo, prioridade] = valores;
+      if (Array.isArray(id)) {
+        id.forEach((x, i) =>
+          estado.atividades.set(x, {
+            dia: dia[i], id: x, horario: horario[i], titulo: titulo[i], detalhe: detalhe[i],
+            duracao_minutos: duracao[i], categoria: categoria[i], fixo: fixo[i], prioridade: prioridade[i],
+          }),
+        );
+      } else {
+        estado.atividades.set(id, {
+          dia, id, horario, titulo, detalhe, duracao_minutos: duracao, categoria, fixo, prioridade,
+        });
+      }
+      return [];
+    }
+    // Leitura do plano: depois dos branches de escrita, porque `delete from
+    // atividades where ...` também contém "from atividades".
+    if (consulta.startsWith('select dia, id, horario')) {
+      return [...estado.atividades.values()].sort(
+        (a, b) => a.dia.localeCompare(b.dia) || a.horario.localeCompare(b.horario) || a.id.localeCompare(b.id),
+      );
     }
     if (consulta.includes('select id, nome, concluido from comodos')) {
       return [...estado.comodos.values()].sort((a, b) => a.nome.localeCompare(b.nome));
@@ -359,4 +395,202 @@ test('erro interno não devolve mensagem do banco', async () => {
   const corpo = await r.json();
   assert.doesNotMatch(corpo.erro, /relation|segredo/);
   assert.ok(r.headers.get('x-erro-id'));
+});
+
+// ---------------------------------------------------------------------------
+// Plano editável
+// ---------------------------------------------------------------------------
+
+test('PUT /dias/:dia/atividades/:id cria a atividade e GET devolve o plano', async () => {
+  const { sql, estado } = banco();
+  const cookie = await comSessao();
+
+  const r = await tratar(
+    pedir('/dias/qua/atividades/qua-09:00', {
+      metodo: 'PUT',
+      cookie,
+      corpo: {
+        id: 'qua-09:00',
+        horario: '09:00',
+        titulo: 'Reorganização',
+        detalhe: 'um cômodo por vez',
+        duracaoMinutos: 210,
+        categoria: 'casa',
+        prioridade: true,
+      },
+    }),
+    env,
+    sql,
+  );
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).atividade.duracaoMinutos, 210);
+
+  const semana = await (await tratar(pedir('/semana', { cookie }), env, sql)).json();
+  assert.equal(semana.versao, 3);
+  assert.deepEqual(semana.dias.map((d) => d.chave), ['qua']);
+  const atividade = semana.dias[0].atividades[0];
+  assert.equal(atividade.titulo, 'Reorganização');
+  assert.equal(atividade.duracaoMinutos, 210);
+  assert.equal(atividade.dia, 'qua');
+});
+
+test('editar horário e duração mantém o id (e a marcação)', async () => {
+  const { sql } = banco();
+  const cookie = await comSessao();
+
+  await tratar(
+    pedir('/dias/seg/atividades/seg-06:00', {
+      metodo: 'PUT',
+      cookie,
+      corpo: { horario: '06:00', titulo: 'Acordar', categoria: 'bemEstar' },
+    }),
+    env,
+    sql,
+  );
+  await tratar(
+    pedir('/atividades/seg-06:00', { metodo: 'PUT', cookie, corpo: { concluida: true } }),
+    env,
+    sql,
+  );
+  await tratar(
+    pedir('/dias/seg/atividades/seg-06:00', {
+      metodo: 'PUT',
+      cookie,
+      corpo: { horario: '05:45', titulo: 'Acordar cedo', duracaoMinutos: 10, categoria: 'bemEstar' },
+    }),
+    env,
+    sql,
+  );
+
+  const semana = await (await tratar(pedir('/semana', { cookie }), env, sql)).json();
+  const atividade = semana.dias[0].atividades[0];
+  assert.equal(atividade.horario, '05:45');
+  assert.equal(atividade.duracaoMinutos, 10);
+  assert.deepEqual(semana.marcadas, ['seg-06:00']);
+});
+
+test('DELETE da atividade também remove a marcação', async () => {
+  const { sql, estado } = banco();
+  const cookie = await comSessao();
+
+  await tratar(
+    pedir('/dias/ter/atividades/ter-11:00', {
+      metodo: 'PUT',
+      cookie,
+      corpo: { horario: '11:00', titulo: 'Academia', categoria: 'movimento', fixo: true },
+    }),
+    env,
+    sql,
+  );
+  await tratar(pedir('/atividades/ter-11:00', { metodo: 'PUT', cookie, corpo: { concluida: true } }), env, sql);
+  assert.ok(estado.marcadas.has('ter-11:00'));
+
+  const r = await tratar(pedir('/dias/ter/atividades/ter-11:00', { metodo: 'DELETE', cookie }), env, sql);
+  assert.equal(r.status, 200);
+  assert.equal(estado.atividades.size, 0);
+  assert.equal(estado.marcadas.has('ter-11:00'), false);
+});
+
+test('atividade inválida é recusada com 400 (dia, horário, categoria, duração)', async () => {
+  const { sql } = banco();
+  const cookie = await comSessao();
+  const enviar = (corpo, caminho = '/dias/seg/atividades/x') =>
+    tratar(pedir(caminho, { metodo: 'PUT', cookie, corpo }), env, sql);
+
+  const base = { horario: '09:00', titulo: 'X', categoria: 'casa' };
+  assert.equal((await enviar({ ...base, horario: '25:00' })).status, 400);
+  assert.equal((await enviar({ ...base, categoria: 'outra' })).status, 400);
+  assert.equal((await enviar({ ...base, titulo: '' })).status, 400);
+  assert.equal((await enviar({ ...base, duracaoMinutos: 0 })).status, 400);
+  assert.equal((await enviar(base, '/dias/xyz/atividades/x')).status, 400);
+});
+
+test('leitor não cria atividade no plano', async () => {
+  const { sql } = banco({ papel: 'leitor' });
+  const r = await tratar(
+    pedir('/dias/seg/atividades/seg-07:00', {
+      metodo: 'PUT',
+      cookie: await comSessao(),
+      corpo: { horario: '07:00', titulo: 'X', categoria: 'casa' },
+    }),
+    env,
+    sql,
+  );
+  assert.equal(r.status, 403);
+});
+
+test('PUT /semana sem dias não apaga o plano existente', async () => {
+  const { sql, estado } = banco();
+  const cookie = await comSessao();
+
+  await tratar(
+    pedir('/dias/seg/atividades/seg-09:00', {
+      metodo: 'PUT',
+      cookie,
+      corpo: { horario: '09:00', titulo: 'Estudo', categoria: 'estudo' },
+    }),
+    env,
+    sql,
+  );
+  // Importação de backup v2: só marcações e cômodos.
+  const r = await tratar(
+    pedir('/semana', {
+      metodo: 'PUT',
+      cookie,
+      corpo: { marcadas: [], comodos: [{ id: 'sala', nome: 'Sala' }] },
+    }),
+    env,
+    sql,
+  );
+  assert.equal(r.status, 200);
+  assert.equal(estado.atividades.size, 1);
+});
+
+test('PUT /semana com dias substitui o plano inteiro', async () => {
+  const { sql, estado } = banco();
+  const cookie = await comSessao();
+
+  await tratar(
+    pedir('/dias/seg/atividades/seg-09:00', {
+      metodo: 'PUT',
+      cookie,
+      corpo: { horario: '09:00', titulo: 'Antiga', categoria: 'casa' },
+    }),
+    env,
+    sql,
+  );
+
+  const r = await tratar(
+    pedir('/semana', {
+      metodo: 'PUT',
+      cookie,
+      corpo: {
+        marcadas: [],
+        comodos: [],
+        dias: [
+          {
+            chave: 'dom',
+            atividades: [
+              { id: 'dom-08:00', horario: '08:00', titulo: 'Nova', categoria: 'bemEstar', duracaoMinutos: 30 },
+            ],
+          },
+        ],
+      },
+    }),
+    env,
+    sql,
+  );
+  assert.equal(r.status, 200);
+  assert.deepEqual([...estado.atividades.values()].map((a) => a.id), ['dom-08:00']);
+
+  const semana = await (await tratar(pedir('/semana', { cookie }), env, sql)).json();
+  assert.equal(semana.dias[0].atividades[0].titulo, 'Nova');
+  assert.equal(semana.dias[0].atividades[0].duracaoMinutos, 30);
+});
+
+test('sem plano gravado, GET /semana não manda dias (o app migra)', async () => {
+  const { sql } = banco();
+  const semana = await (await tratar(pedir('/semana', { cookie: await comSessao() }), env, sql)).json();
+  assert.equal(semana.dias, undefined);
+  assert.deepEqual(semana.marcadas, []);
 });

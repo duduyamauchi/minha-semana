@@ -66,10 +66,24 @@ abstract interface class FonteDeDados {
 }
 ```
 
-Gravar **por atividade** (`definirAtividade`) e não "a semana inteira" é o que
-permite dois aparelhos marcarem coisas diferentes sem um apagar o outro. O teste
-`gravação por entidade` no núcleo prova exatamente isso: dois `Repositorio` sobre
-a mesma fonte, cada um marcando uma atividade, e as duas marcações sobrevivem.
+Gravar **por entidade** (`definirConcluida`, `salvarAtividade`) e não "a semana
+inteira" é o que permite dois aparelhos mexerem em coisas diferentes sem um
+apagar o outro. Os testes provam: dois `Repositorio` sobre a mesma fonte, cada um
+marcando/editando uma atividade, e as duas alterações sobrevivem.
+
+### Duas camadas de edição, e por quê
+
+| Operação | Contrato | Rota |
+| --- | --- | --- |
+| marcar/desmarcar | `definirConcluida` | `PUT /atividades/:id` |
+| criar/editar atividade | `salvarAtividade` | `PUT /dias/:dia/atividades/:id` |
+| excluir atividade | `removerAtividade` | `DELETE /dias/:dia/atividades/:id` |
+| desmarcar a semana | `limparMarcacoes` | `DELETE /atividades` |
+| importar backup | `salvar` | `PUT /semana` |
+
+A separação entre "marcação" e "plano" é intencional: marcar é a ação frequente e
+não muda o plano; editar é raro e muda o que existe. Uma rota só para as duas
+faria cada clique de checkbox carregar título, duração e categoria.
 
 `GravacaoGranular` (mixin) implementa esses métodos para fontes simples
 (`FonteLocal`, `FonteMemoria`) compondo sobre `salvar`. `FonteHttp` sobrescreve
@@ -77,20 +91,35 @@ todos e fala uma rota por operação.
 
 ### O que se persiste
 
-Só o que a usuária fez:
+O plano inteiro, mais o que já foi feito:
 
 ```json
 {
-  "versao": 2,
+  "versao": 3,
   "marcadas": ["qua-09:00", "dom-22:00"],
-  "comodos": [{ "id": "cozinha", "nome": "Cozinha", "concluido": true }]
+  "comodos": [{ "id": "cozinha", "nome": "Cozinha", "concluido": true }],
+  "dias": [
+    {
+      "chave": "qua",
+      "atividades": [
+        { "id": "qua-09:00", "dia": "qua", "horario": "09:00", "titulo": "Reorganização",
+          "duracaoMinutos": 210, "categoria": "casa", "prioridade": true }
+      ]
+    }
+  ]
 }
 ```
 
-O **template** (quais atividades existem, em que horário, com que categoria) é
-compilado em `dados_semana.dart`. Mudar a rotina é mudar código, não migrar
-dados. E o ID de uma atividade é `dia-horário` (`seg-06:00`), não o índice:
-inserir uma atividade nova não remarca as outras.
+**O plano é dado do usuário.** Criar, editar (horário, duração, título,
+detalhe, categoria, flags) e excluir atividades são operações de tela, não
+mudanças de código. `dados_semana.dart` virou apenas a semente: o que a primeira
+abertura mostra, e o ponto de partida para estados gravados no formato v2 (que
+não tinham `dias`).
+
+O ID de uma atividade é opaco e **não** muda ao editar — `seg-06:00` na
+criação, com sufixo (`seg-06:00-2`) quando o par dia/horário já está ocupado. É
+o que faz a marcação sobreviver a mudar o horário: a identidade é o id, não o
+horário.
 
 ## O template
 
