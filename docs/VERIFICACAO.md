@@ -10,7 +10,7 @@ cada item. Serve para não repetir checagem nem confiar em memória.
 | Núcleo | `cd pacotes/planner_core && flutter test` | 107 testes |
 | App | `cd planner && flutter test` | 27 testes |
 | API | `cd api && npm test` | 48 testes |
-| **Ponta a ponta** | `cd e2e && npm test` | **41 testes** (18 API + 23 interface) |
+| **Ponta a ponta** | `cd e2e && npm test` | **47 testes** (18 API + 29 interface) |
 | Análise estática | `flutter analyze` nos dois pacotes Dart | limpo |
 
 Os testes de ponta a ponta rodam contra o site publicado, em Chromium real, e
