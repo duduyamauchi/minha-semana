@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:planner_core/planner_core.dart';
 import 'package:planner_ui/planner_ui.dart';
 
@@ -124,7 +125,7 @@ class _TelaAjustesState extends State<TelaAjustes> {
                           BotaoUi(
                             rotulo: 'Exportar',
                             icone: Icons.download,
-                            onPressed: () {
+                            onPressed: () async {
                               final json = Formatos.jsonBonito(
                                 rep.semana.estado.toJson(),
                               );
@@ -134,6 +135,15 @@ class _TelaAjustesState extends State<TelaAjustes> {
                                 _aviso =
                                     'Cópia do estado abaixo. Selecione e copie o texto.';
                                 _erro = null;
+                              });
+                              // O texto fica no campo e também na área de
+                              // transferência: exportar sem conseguir colar em
+                              // outro lugar não serve de nada.
+                              final copiou = await _copiar(json);
+                              if (!mounted || !copiou) return;
+                              setState(() {
+                                _aviso =
+                                    'Cópia do estado abaixo — também está na área de transferência.';
                               });
                             },
                           ),
@@ -221,6 +231,17 @@ class _TelaAjustesState extends State<TelaAjustes> {
         ),
       ),
     );
+  }
+
+  /// Copia para a área de transferência; devolve `false` quando o navegador
+  /// recusa (sem permissão, contexto não seguro).
+  Future<bool> _copiar(String texto) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: texto));
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _importarEstado(Repositorio rep) async {

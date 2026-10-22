@@ -457,7 +457,7 @@ class _DiaSelecionado extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.end,
           children: [
             Text(
-              hoje ? '${dia.nome} · hoje' : dia.nome,
+              hoje ? '${dia.nomeExibido} · hoje' : dia.nomeExibido,
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             Text(

@@ -86,7 +86,7 @@ class _Aba extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selecionada,
-      label: '${dia.nome}, $feitas de $total atividades',
+      label: '${dia.nomeExibido}, $feitas de $total atividades',
       child: Material(
         color: selecionada ? paleta.destaque : paleta.superficie,
         borderRadius: BorderRadius.circular(paleta.raioMedio),

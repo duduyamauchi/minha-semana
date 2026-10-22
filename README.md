@@ -12,12 +12,14 @@ publicada, **sincroniza na nuvem** entre aparelhos.
 | [`pacotes/planner_ui`](pacotes/planner_ui/) | Primitivas visuais neutras, com paleta injetada | — |
 | [`api`](api/) | API sobre o Postgres: sessão, estado da semana, eventos (Pages Function) | — |
 | [`deploy`](deploy/) | Schema do banco e provisionamento | — |
+| [`e2e`](e2e/) | Testes de ponta a ponta em Chromium real (API + interface) | — |
 
 ## Por onde começar
 
 - **Entender a arquitetura:** [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)
 - **Rodar tudo localmente:** `python ferramentas/servir.py`
 - **Testar:** `flutter test` em `pacotes/planner_core` e `planner`; `npm test` em `api`
+- **Testar de ponta a ponta:** `cd e2e && npm install && npx playwright install chromium && npm test` (ver [`e2e/README.md`](e2e/README.md))
 
 ## Estado atual
 

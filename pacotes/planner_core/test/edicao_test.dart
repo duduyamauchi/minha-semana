@@ -5,6 +5,8 @@ import 'package:planner_core/planner_core.dart';
 /// excluir. O que estes testes protegem é o que uma edição mal feita quebraria:
 /// marcação perdida, id duplicado e ordem da timeline.
 void main() {
+  _testesDeNomeDoDia();
+
   group('horário e duração', () {
     test('lê e formata HH:mm', () {
       expect(Horario.minutos('06:00'), 360);
@@ -218,6 +220,49 @@ void main() {
     test('plano sem dias válidos cai no template', () {
       final estado = EstadoSemana.fromJson({'dias': [{'chave': ''}, 'lixo']});
       expect(estado.dias, isNull);
+    });
+  });
+}
+
+void _testesDeNomeDoDia() {
+  group('nome e nota do dia vindos do servidor', () {
+    test('plano sem nome/nota usa o canônico', () {
+      final estado = EstadoSemana.fromJson({
+        'dias': [
+          {
+            'chave': 'qua',
+            'atividades': [
+              {'id': 'qua-09:00', 'horario': '09:00', 'titulo': 'X', 'categoria': 'casa'},
+            ],
+          },
+        ],
+      });
+      final dia = estado.dias!.single;
+      expect(dia.nome, 'Quarta');
+      expect(dia.nomeExibido, 'Quarta');
+      expect(dia.nomeCurto, 'Qua');
+      expect(dia.nota, 'Dia inteiro de reorganização');
+    });
+
+    test('nome explícito é preservado', () {
+      final estado = EstadoSemana.fromJson({
+        'dias': [
+          {'chave': 'seg', 'nome': 'Segunda-feira', 'nota': 'custom', 'atividades': []},
+        ],
+      });
+      final dia = estado.dias!.single;
+      expect(dia.nomeExibido, 'Segunda-feira');
+      expect(dia.nota, 'custom');
+      expect(dia.nomeCurto, 'Seg');
+    });
+
+    test('nome igual à chave é tratado como ausente', () {
+      final estado = EstadoSemana.fromJson({
+        'dias': [
+          {'chave': 'dom', 'nome': 'dom', 'atividades': []},
+        ],
+      });
+      expect(estado.dias!.single.nomeExibido, 'Domingo');
     });
   });
 }

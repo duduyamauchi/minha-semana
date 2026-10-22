@@ -231,4 +231,10 @@ Modelo em uma frase: **o plano é pessoal; leitura e escrita exigem sessão**.
 cd pacotes/planner_core && flutter analyze && flutter test
 cd planner            && flutter analyze && flutter test
 cd api                && npm test
+cd e2e                && npm test   # contra o site publicado
 ```
+
+O `e2e/` é a única suíte que exercita o que só existe em produção: a Function do
+Pages, o cookie `SameSite=Strict`, a árvore de semântica do Flutter no navegador
+e o Postgres real. Ele também é o teste de contrato do que o app espera da API —
+foi ele que pegou os dias vindo sem nome.

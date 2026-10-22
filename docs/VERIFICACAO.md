@@ -7,10 +7,28 @@ cada item. Serve para não repetir checagem nem confiar em memória.
 
 | Suíte | Comando | Resultado |
 | --- | --- | --- |
-| Núcleo | `cd pacotes/planner_core && flutter test` | 81 testes |
+| Núcleo | `cd pacotes/planner_core && flutter test` | 84 testes |
 | App | `cd planner && flutter test` | 18 testes |
 | API | `cd api && npm test` | 45 testes |
+| **Ponta a ponta** | `cd e2e && npm test` | **33 testes** (14 API + 19 interface) |
 | Análise estática | `flutter analyze` nos dois pacotes Dart | limpo |
+
+Os testes de ponta a ponta rodam contra o site publicado, em Chromium real, e
+cobrem o que os testes de unidade não alcançam: cookie de sessão, roteamento do
+Pages, semântica do Flutter no navegador e persistência no Postgres. Eles
+encontraram dois bugs que nenhuma outra suíte pegava:
+
+1. **Dias sem nome ao vir da nuvem.** A API só persiste a chave (`qua`), e o
+   `Dia.fromJson` usava a chave como nome: as abas mostravam "qua, 0 de 14" em
+   vez de "Quarta, 0 de 14", e a nota do dia sumia. Corrigido com nomes e notas
+   canônicos no domínio (`Dia.nomeDe`, `Dia.notaDe`, `nomeExibido`).
+2. **Rota desconhecida mostrava "Page Not Found".** Um link antigo
+   (`/caminho/que/nao/existe`) caía na tela de erro do GoRouter. Agora um
+   catch-all redireciona para a semana.
+
+Além disso, o E2E expôs que o export de backup não dava saída prática: o texto
+ficava só num campo interno. O botão **Exportar** agora copia o JSON para a área
+de transferência.
 
 ## Plano editável (verificado em produção)
 
@@ -22,6 +40,8 @@ cada item. Serve para não repetir checagem nem confiar em memória.
 | Editor na tela | campos Título, Horário, Duração (h), min, categoria, switches e "Adicionar ao dia" |
 | Menu por linha | "Opções de Acordar" com Editar/Excluir |
 | Semeadura na nuvem | ao abrir com estado v2, o app grava o plano: `PUT /api/semana` e 14 atividades na quarta |
+| Exportar backup | botão copia o JSON; conferido pela área de transferência contra `GET /api/semana` |
+| Rota desconhecida | `/caminho/que/nao/existe` responde 200 e abre a semana |
 
 ## Verificação manual no navegador
 

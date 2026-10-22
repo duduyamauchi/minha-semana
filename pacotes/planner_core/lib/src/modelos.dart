@@ -197,8 +197,46 @@ class Dia {
   /// viraria uma aba fantasma sem lugar na semana.
   static bool chaveValida(String chave) => chavesValidas.contains(chave);
 
+  /// Nomes canônicos por chave.
+  ///
+  /// A API persiste só a chave e as atividades: nome e nota são apresentação.
+  /// Deixá-los no banco faria a mesma semana ter dois textos possíveis, e um
+  /// plano vindo do servidor apareceria como "qua" em vez de "Quarta".
+  static const nomes = {
+    'seg': 'Segunda',
+    'ter': 'Terça',
+    'qua': 'Quarta',
+    'qui': 'Quinta',
+    'sex': 'Sexta',
+    'sab': 'Sábado',
+    'dom': 'Domingo',
+  };
+
+  /// Notas padrão por dia, na ausência de uma nota gravada.
+  static const notas = {
+    'seg': 'Dia inteiro de reorganização',
+    'ter': 'Reorganização entre academia e pilates',
+    'qua': 'Dia inteiro de reorganização',
+    'qui': 'Reorganização entre academia e pilates',
+    'sex': 'Academia e tarde longa de reorganização',
+    'sab': 'Limpeza completa e reorganização',
+    'dom': 'Reorganização de manhã, recarga à tarde',
+  };
+
+  /// Nome por extenso de uma chave (`qua` → `Quarta`).
+  static String nomeDe(String chave) => nomes[chave] ?? chave;
+
+  /// Nota padrão de uma chave.
+  static String notaDe(String chave) => notas[chave] ?? '';
+
+  /// Nome garantido: usa o canônico quando o dado veio sem nome.
+  String get nomeExibido => nome.trim().isEmpty || nome == chave ? nomeDe(chave) : nome;
+
   /// `Seg`, `Ter`, … como nas abas do planejador.
-  String get nomeCurto => nome.length <= 3 ? nome : nome.substring(0, 3);
+  String get nomeCurto {
+    final base = nomeExibido;
+    return base.length <= 3 ? base : base.substring(0, 3);
+  }
 
   bool get ehFimDeSemana => chave == 'sab' || chave == 'dom';
 
@@ -246,10 +284,14 @@ class Dia {
       if (!vistos.add(atividade.id)) continue;
       atividades.add(atividade.id.startsWith('$chave-') ? atividade : atividade.copiarCom(dia: chave));
     }
+    final nome = (j['nome'] as String?)?.trim() ?? '';
+    final nota = (j['nota'] as String?)?.trim() ?? '';
     return Dia(
       chave: chave,
-      nome: (j['nome'] as String?) ?? chave,
-      nota: (j['nota'] as String?) ?? '',
+      // Plano vindo de uma API que só manda a chave: nome e nota vêm do
+      // canônico, senão a aba mostraria "qua" e perderia o resumo do dia.
+      nome: nome.isEmpty ? Dia.nomeDe(chave) : nome,
+      nota: nota.isEmpty ? Dia.notaDe(chave) : nota,
       atividades: atividades,
     );
   }

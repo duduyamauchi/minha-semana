@@ -1,0 +1,15 @@
+{
+  "name": "minha-semana-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Testes de ponta a ponta do Minha Semana: API e interface em Chromium real.",
+  "scripts": {
+    "test": "playwright test",
+    "test:api": "playwright test api",
+    "test:ui": "playwright test ui",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
+  }
+}

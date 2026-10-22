@@ -83,6 +83,10 @@ class Rotas {
         path: '/ajustes',
         builder: (context, estado) => const TelaAjustes(),
       ),
+      // Qualquer caminho desconhecido cai na semana. Sem isto o GoRouter mostra
+      // a tela "Page Not Found", que num app de uma rota só é ruído — e um link
+      // antigo (`/dia/terca`, por exemplo) viraria erro em vez de abrir o app.
+      GoRoute(path: '/:resto(.*)', redirect: (_, _) => '/semana'),
     ],
   );
 
