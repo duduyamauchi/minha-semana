@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:planner_core/planner_core.dart';
 import 'package:planner_ui/planner_ui.dart';
 
-
 import '../core/cores.dart';
 
 /// Uma linha da timeline: horário, bloco colorido por categoria e checkbox.
@@ -79,9 +78,13 @@ class LinhaAtividade extends StatelessWidget {
                       : const EdgeInsets.only(left: 10),
                   decoration: BoxDecoration(
                     color: atividade.prioridade ? paleta.destaqueSuave : null,
-                    border: Border(left: BorderSide(color: corCategoria, width: 3)),
+                    border: Border(
+                      left: BorderSide(color: corCategoria, width: 3),
+                    ),
                     borderRadius: atividade.prioridade
-                        ? const BorderRadius.horizontal(right: Radius.circular(8))
+                        ? const BorderRadius.horizontal(
+                            right: Radius.circular(8),
+                          )
                         : null,
                   ),
                   child: Column(
@@ -94,7 +97,10 @@ class LinhaAtividade extends StatelessWidget {
                           Flexible(child: titulo),
                           if (atividade.fixo) ...[
                             const SizedBox(width: 8),
-                            EtiquetaUi('COMPROMISSO FIXO', cor: context.cores.movimento),
+                            EtiquetaUi(
+                              'COMPROMISSO FIXO',
+                              cor: context.cores.movimento,
+                            ),
                           ],
                         ],
                       ),
@@ -102,7 +108,11 @@ class LinhaAtividade extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           atividade.detalhe,
-                          style: TextStyle(fontSize: 13, color: paleta.textoSecundario, height: 1.35),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: paleta.textoSecundario,
+                            height: 1.35,
+                          ),
                         ),
                       ],
                     ],
@@ -110,7 +120,11 @@ class LinhaAtividade extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              _CaixaMarcacao(concluida: concluida, onTap: onAlternar, paleta: paleta),
+              _CaixaMarcacao(
+                concluida: concluida,
+                onTap: onAlternar,
+                paleta: paleta,
+              ),
             ],
           ),
         ),
@@ -121,7 +135,11 @@ class LinhaAtividade extends StatelessWidget {
 
 /// Checkbox desenhado à mão: quadrado arredondado com tique, como no HTML.
 class _CaixaMarcacao extends StatelessWidget {
-  const _CaixaMarcacao({required this.concluida, required this.onTap, required this.paleta});
+  const _CaixaMarcacao({
+    required this.concluida,
+    required this.onTap,
+    required this.paleta,
+  });
 
   final bool concluida;
   final VoidCallback onTap;

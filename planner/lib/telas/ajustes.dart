@@ -55,39 +55,66 @@ class _TelaAjustesState extends State<TelaAjustes> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Origem dos dados', style: Theme.of(context).textTheme.headlineSmall),
+                      Text(
+                        'Origem dos dados',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
                       const SizedBox(height: 8),
                       _LinhaInfo(rotulo: 'Fonte', valor: rep.fonte.descricao),
                       _LinhaInfo(
                         rotulo: 'Onde fica',
-                        valor: rep.fonteRemota ? 'Na nuvem, ligada à sua conta' : 'Neste aparelho',
+                        valor: rep.fonteRemota
+                            ? 'Na nuvem, ligada à sua conta'
+                            : 'Neste aparelho',
                       ),
-                      _LinhaInfo(rotulo: 'Progresso', valor: '${rep.percentual}% da semana'),
-                      _LinhaInfo(rotulo: 'Atividades', valor: '${rep.totalFeitas} de ${rep.totalAtividades}'),
-                      _LinhaInfo(rotulo: 'Telemetria', valor: rep.analytics.descricaoColetor),
+                      _LinhaInfo(
+                        rotulo: 'Progresso',
+                        valor: '${rep.percentual}% da semana',
+                      ),
+                      _LinhaInfo(
+                        rotulo: 'Atividades',
+                        valor: '${rep.totalFeitas} de ${rep.totalAtividades}',
+                      ),
+                      _LinhaInfo(
+                        rotulo: 'Telemetria',
+                        valor: rep.analytics.descricaoColetor,
+                      ),
                       const SizedBox(height: 12),
                     ],
                   ),
                 ),
                 const SizedBox(height: 16),
                 if (_aviso != null) ...[
-                  FaixaErroUi(mensagem: _aviso!, onDispensar: () => setState(() => _aviso = null)),
+                  FaixaErroUi(
+                    mensagem: _aviso!,
+                    onDispensar: () => setState(() => _aviso = null),
+                  ),
                   const SizedBox(height: 12),
                 ],
                 if (_erro != null) ...[
-                  FaixaErroUi(mensagem: _erro!, onDispensar: () => setState(() => _erro = null)),
+                  FaixaErroUi(
+                    mensagem: _erro!,
+                    onDispensar: () => setState(() => _erro = null),
+                  ),
                   const SizedBox(height: 12),
                 ],
                 CaixaUi(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Backup', style: Theme.of(context).textTheme.headlineSmall),
+                      Text(
+                        'Backup',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
                       const SizedBox(height: 6),
                       Text(
                         'O estado é um JSON pequeno: marcações e cômodos. Exporte para guardar '
                         'uma cópia ou para levar o plano de um aparelho a outro.',
-                        style: TextStyle(fontSize: 13.5, color: paleta.textoSecundario, height: 1.45),
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          color: paleta.textoSecundario,
+                          height: 1.45,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Wrap(
@@ -98,17 +125,22 @@ class _TelaAjustesState extends State<TelaAjustes> {
                             rotulo: 'Exportar',
                             icone: Icons.download,
                             onPressed: () {
-                              final json = Formatos.jsonBonito(rep.semana.estado.toJson());
+                              final json = Formatos.jsonBonito(
+                                rep.semana.estado.toJson(),
+                              );
                               _importar.text = json;
                               setState(() {
                                 _mostrarImportar = true;
-                                _aviso = 'Cópia do estado abaixo. Selecione e copie o texto.';
+                                _aviso =
+                                    'Cópia do estado abaixo. Selecione e copie o texto.';
                                 _erro = null;
                               });
                             },
                           ),
                           BotaoUi(
-                            rotulo: _mostrarImportar ? 'Ocultar importação' : 'Importar',
+                            rotulo: _mostrarImportar
+                                ? 'Ocultar importação'
+                                : 'Importar',
                             icone: Icons.upload,
                             secundario: true,
                             onPressed: () => setState(() {
@@ -125,7 +157,10 @@ class _TelaAjustesState extends State<TelaAjustes> {
                           controller: _importar,
                           minLines: 6,
                           maxLines: 14,
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12.5,
+                          ),
                           decoration: const InputDecoration(
                             hintText: 'Cole aqui o JSON exportado',
                             alignLabelWithHint: true,
@@ -147,10 +182,19 @@ class _TelaAjustesState extends State<TelaAjustes> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Conta', style: Theme.of(context).textTheme.headlineSmall),
+                        Text(
+                          'Conta',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
                         const SizedBox(height: 8),
-                        _LinhaInfo(rotulo: 'Usuário', valor: escopo.sessao?.usuario ?? '—'),
-                        _LinhaInfo(rotulo: 'Papel', valor: escopo.sessao?.papelRotulo ?? '—'),
+                        _LinhaInfo(
+                          rotulo: 'Usuário',
+                          valor: escopo.sessao?.usuario ?? '—',
+                        ),
+                        _LinhaInfo(
+                          rotulo: 'Papel',
+                          valor: escopo.sessao?.papelRotulo ?? '—',
+                        ),
                         const SizedBox(height: 12),
                         BotaoUi(
                           rotulo: 'Sair',
@@ -187,17 +231,23 @@ class _TelaAjustesState extends State<TelaAjustes> {
     }
     try {
       final json = jsonDecode(texto);
-      if (json is! Map) throw const FormatException('O JSON precisa ser um objeto.');
+      if (json is! Map) {
+        throw const FormatException('O JSON precisa ser um objeto.');
+      }
       final estado = EstadoSemana.fromJson(json.cast<String, dynamic>());
       final ok = await rep.importar(estado);
       if (!mounted) return;
       setState(() {
         _erro = ok ? null : rep.erro;
-        _aviso = ok ? 'Semana importada: ${estado.marcadas.length} atividades e ${estado.comodos.length} cômodos.' : null;
+        _aviso = ok
+            ? 'Semana importada: ${estado.marcadas.length} atividades e ${estado.comodos.length} cômodos.'
+            : null;
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _erro = 'JSON inválido: não foi possível ler o backup.');
+      setState(() {
+        _erro = 'JSON inválido: não foi possível ler o backup.';
+      });
     }
   }
 }
@@ -218,10 +268,16 @@ class _LinhaInfo extends StatelessWidget {
         children: [
           SizedBox(
             width: 110,
-            child: Text(rotulo, style: TextStyle(fontSize: 13.5, color: paleta.textoSecundario)),
+            child: Text(
+              rotulo,
+              style: TextStyle(fontSize: 13.5, color: paleta.textoSecundario),
+            ),
           ),
           Expanded(
-            child: Text(valor, style: TextStyle(fontSize: 13.5, color: paleta.texto)),
+            child: Text(
+              valor,
+              style: TextStyle(fontSize: 13.5, color: paleta.texto),
+            ),
           ),
         ],
       ),

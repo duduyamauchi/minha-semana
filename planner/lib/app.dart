@@ -74,7 +74,9 @@ class _AplicativoState extends State<Aplicativo> {
 
   Future<Sessao> _entrar(String usuario, String senha) async {
     final cliente = widget.clienteSessao;
-    if (cliente == null) throw const ErroLogin('Este aplicativo não tem servidor configurado.');
+    if (cliente == null) {
+      throw const ErroLogin('Este aplicativo não tem servidor configurado.');
+    }
     final sessao = await cliente.entrar(usuario, senha);
     _sessao.value = sessao;
     _avisoSessao.value = null;
@@ -98,7 +100,10 @@ class _AplicativoState extends State<Aplicativo> {
     _inatividade = Inatividade(
       limite: Duration(seconds: Ambiente.inatividadeSegundos),
       aoAvisar: () {
-        if (mounted) _avisoSessao.value = 'Sua sessão expira em instantes por inatividade.';
+        if (mounted) {
+          _avisoSessao.value =
+              'Sua sessão expira em instantes por inatividade.';
+        }
       },
       aoExpirar: () async {
         if (!mounted) return;
@@ -108,7 +113,9 @@ class _AplicativoState extends State<Aplicativo> {
         );
         await _sair();
         if (!mounted) return;
-        _rotas.go('/acesso?motivo=${Uri.encodeComponent('Sessão encerrada. Entre de novo.')}');
+        _rotas.go(
+          '/acesso?motivo=${Uri.encodeComponent('Sessão encerrada. Entre de novo.')}',
+        );
       },
     )..iniciar();
   }
@@ -118,7 +125,9 @@ class _AplicativoState extends State<Aplicativo> {
   void _registrarUso() {
     if (_sessao.value == null || _inatividade == null) return;
     _inatividade!.registrarUso();
-    if (_avisoSessao.value != null) _avisoSessao.value = null;
+    if (_avisoSessao.value != null) {
+      _avisoSessao.value = null;
+    }
   }
 
   @override

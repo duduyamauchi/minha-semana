@@ -28,9 +28,6 @@ void main() {
   }
 
   runApp(
-    Aplicativo(
-      repositorio: repositorio,
-      clienteSessao: Ambiente.criarSessao(),
-    ),
+    Aplicativo(repositorio: repositorio, clienteSessao: Ambiente.criarSessao()),
   );
 }

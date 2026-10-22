@@ -26,8 +26,7 @@ flowchart LR
   L["FonteLocal<br/>(aparelho)"]
   M["FonteMemoria<br/>(testes)"]
   H["FonteHttp"]
-  P["Proxy /api<br/>(mesma origem)"]
-  W["minha-semana-api"]
+  P["Pages Function<br/>/api/* (mesma origem)"]
   N[("Postgres<br/>Neon")]
 
   S --> R
@@ -41,10 +40,13 @@ flowchart LR
   W --> N
 ```
 
-O proxy de mesma origem não é decoração: o cookie de sessão é `SameSite=Strict`,
-e o navegador **não o envia** quando app e API estão em hosts diferentes.
-Chamar a API direto funcionava para leitura pública e silenciosamente devolvia
-sessão vazia — na prática, o app parecia logado e não persistia nada.
+App e API são o mesmo projeto Pages, servidos na mesma origem: a Function em
+`planner/functions/api/[[caminho]].js` encaminha `/api/*` para `api/src`.
+
+A mesma origem não é decoração: o cookie de sessão é `SameSite=Strict`, e o
+navegador **não o envia** quando app e API estão em hosts diferentes. Chamar a
+API direto funcionava para leitura pública e silenciosamente devolvia sessão
+vazia — na prática, o app parecia logado e não persistia nada.
 
 ## O contrato
 
@@ -188,7 +190,7 @@ Modelo em uma frase: **o plano é pessoal; leitura e escrita exigem sessão**.
 | Define | Padrão | Uso |
 | --- | --- | --- |
 | `PLANNER_FONTE` | `local` | `local`, `memoria`, `http` |
-| `PLANNER_API` | vazio | raiz da API; `/api` é obrigatório em produção |
+| `PLANNER_API` | vazio | raiz da API; `/api` em produção (mesma origem) |
 | `PLANNER_TOKEN` | vazio | token de serviço (máquina-a-máquina) |
 | `PLANNER_ANALYTICS` | `memoria` | `memoria`, `http`, `console`, `nulo` |
 | `PLANNER_API_EVENTOS` | `PLANNER_API` | raiz da API de eventos |
@@ -199,5 +201,5 @@ Modelo em uma frase: **o plano é pessoal; leitura e escrita exigem sessão**.
 ```bash
 cd pacotes/planner_core && flutter analyze && flutter test
 cd planner            && flutter analyze && flutter test
-cd workers/api        && npm test
+cd api                && npm test
 ```

@@ -9,12 +9,12 @@ cada item. Serve para não repetir checagem nem confiar em memória.
 | --- | --- | --- |
 | Núcleo | `cd pacotes/planner_core && flutter test` | 55 testes |
 | App | `cd planner && flutter test` | 9 testes |
-| API | `cd workers/api && npm test` | 37 testes |
+| API | `cd api && npm test` | 37 testes |
 | Análise estática | `flutter analyze` nos dois pacotes Dart | limpo |
 
 ## Verificação manual no navegador
 
-Feita contra o build de produção (`minha-semana.quarto-de-milha.workers.dev`),
+Feita contra o build de produção (`minhasemana.pages.dev`),
 com Chromium real:
 
 | O que | Evidência |
@@ -46,14 +46,17 @@ com Chromium real:
    build parece "não carregar". `ferramentas/servir.py` usa `ThreadingTCPServer`
    e HTTP/1.1.
 4. **`curl` sem User-Agent** leva 403 (erro 1010) do Cloudflare.
-5. **Worker recém-criado responde 404 por alguns segundos.** `wrangler secret
-   put` cria o Worker vazio; o primeiro `deploy` leva ~15 s para propagar. Não é
-   erro de código.
-6. **`node --test test/`** falha no Node 22 do Windows tratando o diretório como
+5. **Secrets do Pages exigem redeploy.** `wrangler pages secret put` não afeta o
+   deployment já publicado: a Function continua respondendo `503 Servidor sem
+   SESSION_SECRET`. Publique de novo depois de criar o secret.
+6. **`_redirects` não vale para Functions.** As rotas são enumeradas
+   (`/semana`, `/dia/*`, `/acesso`, `/ajustes`) justamente para não capturar
+   `/api`.
+7. **`node --test test/`** falha no Node 22 do Windows tratando o diretório como
    módulo. Use `node --test` (sem argumento).
-7. **`usePathUrlStrategy`** é obrigatório: sem ele `/dia/qua` abre a tela
+8. **`usePathUrlStrategy`** é obrigatório: sem ele `/dia/qua` abre a tela
    inicial, porque tudo depois do `#` é ignorado.
-8. **Não carregue `flutter_bootstrap.js` junto com o bloco inline.** Inicializa
+9. **Não carregue `flutter_bootstrap.js` junto com o bloco inline.** Inicializa
    o motor duas vezes e o Canvaskit quebra no primeiro rebuild.
 
 ## O que não foi verificado

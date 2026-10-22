@@ -25,12 +25,11 @@ Publicado e lendo do Postgres.
 
 | Recurso | URL |
 | --- | --- |
-| Aplicativo | https://minha-semana.quarto-de-milha.workers.dev |
-| API | https://minha-semana-api.quarto-de-milha.workers.dev |
+| Aplicativo e API | https://minhasemana.pages.dev (`/api/*` é a API) |
 
-O app é compilado com `PLANNER_FONTE=http` e `PLANNER_API=/api`, sempre pelo
-proxy `/api` do próprio host — o cookie de sessão é `SameSite=Strict` e não
-atravessa host diferente.
+O app é compilado com `PLANNER_FONTE=http` e `PLANNER_API=/api`. App e API são o
+mesmo projeto Cloudflare Pages, servidos na mesma origem — o cookie de sessão é
+`SameSite=Strict` e não atravessa host diferente.
 
 Sem argumentos de build, o app usa o armazenamento do aparelho. O template não
 fica no banco: ele é compilado no app, então mudar a rotina não exige migração.
@@ -49,6 +48,7 @@ fica no banco: ele é compilado no app, então mudar a rotina não exige migraç
 | Erro | mensagem do banco nunca vai ao cliente; log com `x-erro-id` |
 | Cabeçalhos | HSTS, CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy` |
 | CORS | allowlist exata, sem `*` |
+| Hospedagem | Cloudflare Pages: app e API na mesma origem, um deploy |
 
 Detalhes e o porquê de cada escolha em
 [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md#segurança).
@@ -63,15 +63,14 @@ flowchart LR
   L["FonteLocal<br/>(padrão)"]
   M["FonteMemoria<br/>(testes)"]
   H["FonteHttp"]
-  P["Proxy /api<br/>(mesma origem)"]
-  W["minha-semana-api<br/>(Worker)"]
+  P["Pages Function<br/>/api/* (mesma origem)"]
   N[("Postgres<br/>Neon")]
 
   T --> R --> F
   F --> L
   F --> M
   F --> H
-  H --> P --> W --> N
+  H --> P --> N
 ```
 
 Trocar de fonte é recompilar, não reescrever tela:
@@ -99,5 +98,5 @@ flutter build web --release \
 ```bash
 cd pacotes/planner_core && flutter analyze && flutter test
 cd planner            && flutter analyze && flutter test
-cd workers/api        && npm test
+cd api        && npm test
 ```

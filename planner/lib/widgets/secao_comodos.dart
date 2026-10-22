@@ -54,13 +54,20 @@ class _SecaoComodosState extends State<SecaoComodos> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Reorganização da casa', style: Theme.of(context).textTheme.headlineSmall),
+          Text(
+            'Reorganização da casa',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
           const SizedBox(height: 6),
           Text(
             'Um cômodo ou categoria por sessão, com as técnicas que você aprendeu. '
             'Prioridade do momento: os blocos verdes marcados como reorganização ocupam '
             'a maior parte de cada dia até a casa toda estar pronta.',
-            style: TextStyle(fontSize: 13.5, color: paleta.textoSecundario, height: 1.45),
+            style: TextStyle(
+              fontSize: 13.5,
+              color: paleta.textoSecundario,
+              height: 1.45,
+            ),
           ),
           const SizedBox(height: 8),
           _GradeComodos(
@@ -117,7 +124,10 @@ class _GradeComodos extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Text(
           'Nenhum cômodo na lista. Adicione o primeiro abaixo.',
-          style: TextStyle(fontSize: 13.5, color: EscopoUi.de(context).textoSecundario),
+          style: TextStyle(
+            fontSize: 13.5,
+            color: EscopoUi.de(context).textoSecundario,
+          ),
         ),
       );
     }
@@ -150,7 +160,11 @@ class _GradeComodos extends StatelessWidget {
 }
 
 class _ItemComodo extends StatelessWidget {
-  const _ItemComodo({required this.comodo, required this.onAlternar, required this.onRemover});
+  const _ItemComodo({
+    required this.comodo,
+    required this.onAlternar,
+    required this.onRemover,
+  });
 
   final Comodo comodo;
   final void Function(Comodo comodo) onAlternar;
@@ -163,7 +177,9 @@ class _ItemComodo extends StatelessWidget {
       checked: comodo.concluido,
       label: comodo.nome,
       child: Container(
-        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: paleta.borda))),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: paleta.borda)),
+        ),
         child: Row(
           children: [
             Expanded(
@@ -180,8 +196,12 @@ class _ItemComodo extends StatelessWidget {
                           comodo.nome,
                           style: TextStyle(
                             fontSize: 14.5,
-                            color: comodo.concluido ? paleta.textoSecundario : paleta.texto,
-                            decoration: comodo.concluido ? TextDecoration.lineThrough : null,
+                            color: comodo.concluido
+                                ? paleta.textoSecundario
+                                : paleta.texto,
+                            decoration: comodo.concluido
+                                ? TextDecoration.lineThrough
+                                : null,
                             decorationColor: paleta.textoSecundario,
                           ),
                         ),
@@ -219,9 +239,14 @@ class _Quadro extends StatelessWidget {
       decoration: BoxDecoration(
         color: concluido ? paleta.destaque : paleta.superficie,
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: concluido ? paleta.destaque : paleta.borda, width: 2),
+        border: Border.all(
+          color: concluido ? paleta.destaque : paleta.borda,
+          width: 2,
+        ),
       ),
-      child: concluido ? Icon(Icons.check, size: 15, color: paleta.fundo) : null,
+      child: concluido
+          ? Icon(Icons.check, size: 15, color: paleta.fundo)
+          : null,
     );
   }
 }

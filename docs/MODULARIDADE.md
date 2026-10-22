@@ -126,7 +126,7 @@ trocável. Não é modular onde a abstração **ainda não se pagou**.
 | `pacotes/planner_core/lib` | 2.034 |
 | `pacotes/planner_ui/lib` | 352 |
 | `planner/lib` | 2.001 |
-| `workers/api/src` | 885 |
+| `api/src` | 885 |
 | testes (Dart + Node) | 1.383 |
 
 O núcleo é comparável ao app em tamanho porque contém o template inteiro — que

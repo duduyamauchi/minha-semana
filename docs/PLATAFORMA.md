@@ -2,9 +2,9 @@
 
 Pergunta: onde hospedar o Minha Semana para uso real.
 
-Resposta curta: a pilha já implantada — **Cloudflare Workers (app + API) e
-**Neon** em São Paulo — custa US$ 0 e cobre o caso de uso inteiro. Não há
-servidor próprio, não há CDN separada e não há conta de banco a administrar.
+Resposta curta: a pilha já implantada — **Cloudflare Pages (app + API como
+Function) e Neon** em São Paulo — custa US$ 0 e cobre o caso de uso inteiro. Não
+há servidor próprio, não há CDN separada e não há conta de banco a administrar.
 
 ---
 
@@ -12,8 +12,8 @@ servidor próprio, não há CDN separada e não há conta de banco a administrar
 
 | Necessidade | Como está |
 | --- | --- |
-| App (Flutter Web) | Worker `minha-semana` + assets na CDN da Cloudflare |
-| API de dados | Worker `minha-semana-api` |
+| App (Flutter Web) | projeto Pages `minhasemana` + assets na CDN da Cloudflare |
+| API de dados | Pages Function em `/api/*` (mesmo projeto) |
 | Banco | Neon Postgres 17 em `aws-sa-east-1` |
 | Login | próprio, com sessão assinada em cookie |
 | Fotos/vídeos | **não há** — o app não guarda mídia |
@@ -22,17 +22,22 @@ O último item é o que deixa esta implantação mais simples que a de referênc
 app não tem arquivo a servir, então não há R2, CORS de bucket nem orçamento de
 egress.
 
-## 2. Por que Worker e não Pages (ou Vercel)
+## 2. Por que Pages e não Worker, Vercel ou Render
 
-- **Mesma origem para app e API**: o binding de serviço permite `/api` sem
-  internet no meio, e é o que faz o cookie `SameSite=Strict` valer. Num host de
-  estático + host de API separado, o login entra mas o app não persiste — foi um
-  bug real no projeto de referência.
+- **URL sem o nome da conta.** O subdomínio `*.workers.dev` é fixo da conta
+  Cloudflare (a API recusa a troca, erro 10036) e arrastaria o nome de outro
+  projeto. No Pages, o domínio vem do nome do projeto: `minhasemana.pages.dev`.
+- **Mesma origem para app e API**: a Function em `/functions/api` serve `/api/*`
+  sem internet no meio, e é o que faz o cookie `SameSite=Strict` valer. Num host
+  de estático + host de API separado, o login entra mas o app não persiste — foi
+  um bug real no projeto de referência.
 - **`_headers` é respeitado**: CSP e HSTS saem junto com o build.
-- **Roteamento de SPA**: `not_found_handling: single-page-application` faz
-  `/dia/qua` cair no `index.html` em vez de 404.
-- **Custo**: Workers Free inclui 100 mil requisições/dia; um planner pessoal usa
-  três ordens de magnitude menos.
+- **Roteamento de SPA**: `_redirects` manda `/dia/*`, `/semana`, `/acesso` e
+  `/ajustes` para o `index.html`. As rotas são enumeradas justamente para não
+  capturar `/api`.
+- **Custo**: o free tier do Pages tem requisições e bandwidth folgados; um
+  planner pessoal usa três ordens de magnitude menos.
+- **Um único deploy** publica app e API, com os mesmos secrets.
 
 ## 3. Neon em São Paulo
 
@@ -63,8 +68,8 @@ Quando migrar:
 
 | Gatilho | Ação |
 | --- | --- |
-| Domínio próprio | Registrar no Registro.br e apontar `CNAME` para o Worker |
-| Mais de 100 mil req/dia | Workers Paid (US$ 5/mês) |
+| Domínio próprio | Registrar no Registro.br e apontar `CNAME` para o projeto Pages |
+| Mais de 100 mil req/dia | Workers Paid / Pages com limites maiores (US$ 5/mês) |
 | Banco acima de 1 GB | Neon Launch (uso, ~US$ 15) |
 | App nas lojas | Play US$ 25 único; iOS US$ 99/ano + Mac |
 
@@ -82,9 +87,10 @@ separação `planner_core` / `planner_ui` existem para isso.
 ## 6. Riscos honestos
 
 - **Free tiers mudam** sem aviso. Não construir negócio sobre eles sem plano B.
-- **Sem SLA e sem suporte**: se cair, quem resolve é você. O log do Worker
-  (`observability: true`) e o `x-erro-id` existem para isso.
-- **Subdomínio fixo**: `quarto-de-milha.workers.dev` é o da conta; trocar exige
-  outra conta ou domínio próprio. Não afeta o produto.
+- **Sem SLA e sem suporte**: se cair, quem resolve é você. O log do deployment e o
+  `x-erro-id` existem para isso.
+- **Nome do projeto fixa o domínio**: `minhasemana.pages.dev` vem do nome do
+  projeto Pages. Renomear o projeto muda a URL (e a allowlist de origem junto);
+  para um domínio próprio, basta apontar CNAME para o Pages.
 - **LGPD**: o banco guarda um identificador e o plano de uma pessoa. Não há dado
   sensível, mas a senha nunca é armazenada — só o hash com pepper do servidor.

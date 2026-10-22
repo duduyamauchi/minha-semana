@@ -1,17 +1,13 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "minha-semana",
-  "main": "src/index.js",
+  "$schema": "../api/node_modules/wrangler/config-schema.json",
+  "name": "minhasemana",
+  "pages_build_output_dir": "./build/web",
   "compatibility_date": "2026-10-20",
-  "assets": {
-    "directory": "./build/web",
-    "not_found_handling": "single-page-application",
-    "binding": "ASSETS"
-  },
-  "services": [
-    {
-      "binding": "API",
-      "service": "minha-semana-api"
-    }
-  ]
+  "vars": {
+    // Quadro da dona do plano. O mesmo valor usado no provisionamento.
+    "QUADRO_ID": "00000000-0000-0000-0000-000000000001",
+    // Origens que podem chamar a API com cookie. Allowlist exata, sem curinga.
+    // O app chama `/api` na própria origem, então só ela precisa estar aqui.
+    "ORIGENS_PERMITIDAS": "https://minhasemana.pages.dev,http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081"
+  }
 }

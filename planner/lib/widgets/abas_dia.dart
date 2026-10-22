@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:planner_core/planner_core.dart';
 import 'package:planner_ui/planner_ui.dart';
 
-
 /// Seletor de dia: as sete abas com contador de concluídas.
 ///
 /// No celular o contador some (o original faz o mesmo em < 440 px); o nome
@@ -95,7 +94,10 @@ class _Aba extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(paleta.raioMedio),
           child: Container(
-            padding: EdgeInsets.symmetric(vertical: estreito ? 7 : 8, horizontal: 2),
+            padding: EdgeInsets.symmetric(
+              vertical: estreito ? 7 : 8,
+              horizontal: 2,
+            ),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(paleta.raioMedio),
               border: Border.all(

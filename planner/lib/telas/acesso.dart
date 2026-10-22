@@ -74,11 +74,17 @@ class _TelaAcessoState extends State<TelaAcesso> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('Minha Semana', style: Theme.of(context).textTheme.displaySmall),
+                    Text(
+                      'Minha Semana',
+                      style: Theme.of(context).textTheme.displaySmall,
+                    ),
                     const SizedBox(height: 6),
                     Text(
                       widget.motivo ?? 'Entre para sincronizar a sua semana.',
-                      style: TextStyle(fontSize: 14, color: paleta.textoSecundario),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: paleta.textoSecundario,
+                      ),
                     ),
                     const SizedBox(height: 28),
                     TextField(
@@ -106,13 +112,18 @@ class _TelaAcessoState extends State<TelaAcesso> {
                       decoration: InputDecoration(
                         labelText: 'Senha',
                         suffixIcon: IconButton(
-                          onPressed: () => setState(() => _mostrarSenha = !_mostrarSenha),
+                          onPressed: () =>
+                              setState(() => _mostrarSenha = !_mostrarSenha),
                           icon: Icon(
-                            _mostrarSenha ? Icons.visibility_off : Icons.visibility,
+                            _mostrarSenha
+                                ? Icons.visibility_off
+                                : Icons.visibility,
                             size: 19,
                           ),
                           color: paleta.textoSecundario,
-                          tooltip: _mostrarSenha ? 'Ocultar senha' : 'Mostrar senha',
+                          tooltip: _mostrarSenha
+                              ? 'Ocultar senha'
+                              : 'Mostrar senha',
                         ),
                       ),
                     ),
@@ -129,7 +140,10 @@ class _TelaAcessoState extends State<TelaAcesso> {
                     Text(
                       'O plano fica salvo na sua conta e aparece em qualquer aparelho.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 12.5, color: paleta.textoSecundario),
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: paleta.textoSecundario,
+                      ),
                     ),
                   ],
                 ),

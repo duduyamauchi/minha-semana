@@ -47,8 +47,14 @@ class Rotas {
     },
     routes: [
       GoRoute(path: '/', redirect: (_, _) => '/semana'),
-      GoRoute(path: '/semana', builder: (context, estado) => _semana(context, estado)),
-      GoRoute(path: '/dia/:chave', builder: (context, estado) => _semana(context, estado)),
+      GoRoute(
+        path: '/semana',
+        builder: (context, estado) => _semana(context, estado),
+      ),
+      GoRoute(
+        path: '/dia/:chave',
+        builder: (context, estado) => _semana(context, estado),
+      ),
       GoRoute(
         path: '/acesso',
         builder: (context, estado) => TelaAcesso(
@@ -56,7 +62,10 @@ class Rotas {
           motivo: estado.uri.queryParameters['motivo'],
         ),
       ),
-      GoRoute(path: '/ajustes', builder: (context, estado) => const TelaAjustes()),
+      GoRoute(
+        path: '/ajustes',
+        builder: (context, estado) => const TelaAjustes(),
+      ),
     ],
   );
 

@@ -293,8 +293,11 @@ const ROTAS = {
   eventos: 'telemetria',
 };
 
+/** Cliente do banco para um ambiente. Usado pelo Worker e pela função do Pages. */
+export const criarSql = (env) => neon(env.DATABASE_URL);
+
 export default {
-  fetch: (request, env) => tratar(request, env, neon(env.DATABASE_URL)),
+  fetch: (request, env) => tratar(request, env, criarSql(env)),
 };
 
 /**

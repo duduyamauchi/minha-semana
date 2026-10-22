@@ -79,7 +79,11 @@ abstract final class Tema {
             displaySmall: display.copyWith(fontSize: 33, height: 1.15),
             headlineSmall: display.copyWith(fontSize: 20, height: 1.25),
             titleMedium: display,
-            bodyMedium: corpo.copyWith(fontSize: 15, height: 1.5, color: paleta.texto),
+            bodyMedium: corpo.copyWith(
+              fontSize: 15,
+              height: 1.5,
+              color: paleta.texto,
+            ),
             bodySmall: corpoPequeno.copyWith(
               fontSize: 13,
               height: 1.45,
@@ -87,11 +91,18 @@ abstract final class Tema {
             ),
           ),
       textSelectionTheme: TextSelectionThemeData(cursorColor: paleta.destaque),
-      dividerTheme: DividerThemeData(color: paleta.borda, thickness: 1, space: 1),
+      dividerTheme: DividerThemeData(
+        color: paleta.borda,
+        thickness: 1,
+        space: 1,
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: paleta.fundo,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 14,
+        ),
         hintStyle: corpo.copyWith(color: paleta.textoSecundario, fontSize: 15),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
@@ -109,7 +120,10 @@ abstract final class Tema {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: paleta.texto,
-        contentTextStyle: corpo.copyWith(color: paleta.superficie, fontSize: 14),
+        contentTextStyle: corpo.copyWith(
+          color: paleta.superficie,
+          fontSize: 14,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );

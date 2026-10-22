@@ -41,7 +41,7 @@ abstract final class Ambiente {
   /// Endereço do app, exibido em textos de compartilhamento.
   static const site = String.fromEnvironment(
     'PLANNER_SITE',
-    defaultValue: 'https://minha-semana.quarto-de-milha.workers.dev',
+    defaultValue: 'https://minhasemana.pages.dev',
   );
 
   /// Quanto tempo a sessão pode ficar parada antes de pedir login de novo.
