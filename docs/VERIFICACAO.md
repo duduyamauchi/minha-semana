@@ -7,10 +7,10 @@ cada item. Serve para não repetir checagem nem confiar em memória.
 
 | Suíte | Comando | Resultado |
 | --- | --- | --- |
-| Núcleo | `cd pacotes/planner_core && flutter test` | 107 testes |
-| App | `cd planner && flutter test` | 27 testes |
+| Núcleo | `cd pacotes/planner_core && flutter test` | 126 testes |
+| App | `cd planner && flutter test` | 35 testes |
 | API | `cd api && npm test` | 48 testes |
-| **Ponta a ponta** | `cd e2e && npm test` | **47 testes** (18 API + 29 interface) |
+| **Ponta a ponta** | `cd e2e && npm test` | **53 testes** (18 API + 35 interface) |
 | Análise estática | `flutter analyze` nos dois pacotes Dart | limpo |
 
 Os testes de ponta a ponta rodam contra o site publicado, em Chromium real, e
@@ -29,6 +29,16 @@ encontraram dois bugs que nenhuma outra suíte pegava:
 Além disso, o E2E expôs que o export de backup não dava saída prática: o texto
 ficava só num campo interno. O botão **Exportar** agora copia o JSON para a área
 de transferência.
+
+## Conflito de horário (verificado em produção)
+
+| O que | Evidência |
+| --- | --- |
+| Aviso no editor | 25 min em "Acordar" mostra "Este horário sobrepõe outra atividade" e "Você pode salvar assim mesmo" |
+| Aviso na lista | linha com "Conflito com Manutenção da limpeza (06:10)" e resumo "1 sobreposição de horário" |
+| Encaixe exato | 10 min não gera aviso (termina às 06:10) |
+| Sem bloqueio | salvar conclui com conflito; marcar como feito continua funcionando |
+| Correção | limpar a duração remove o aviso |
 
 ## Calendário (verificado em produção)
 

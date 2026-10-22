@@ -216,6 +216,7 @@ class _TelaSemanaState extends State<TelaSemana> {
                     hoje: Datas.mesmoDia(agenda.selecionado, hoje),
                     semana: rep.semana,
                     editavel: rep.permiteEscrita,
+                    conflitos: rep.conflitosDoDia(diaAberto.chave),
                     onAlternar: rep.alternar,
                     onEditar: (atividade) =>
                         _abrirEditor(atividade, nova: false),
@@ -277,6 +278,18 @@ class _TelaSemanaState extends State<TelaSemana> {
       context,
       atividade: atividade,
       nova: nova,
+      // O editor recalcula os choques a cada digitação contra o dia inteiro.
+      doDia: rep.dias
+          .firstWhere(
+            (d) => d.chave == atividade.dia,
+            orElse: () => Dia(
+              chave: atividade.dia,
+              nome: Dia.nomeDe(atividade.dia),
+              nota: '',
+              atividades: const [],
+            ),
+          )
+          .atividades,
     );
     if (!mounted || resultado == null) return;
 
@@ -605,6 +618,7 @@ class _DiaSelecionado extends StatelessWidget {
     required this.onExcluir,
     required this.onNova,
     required this.editavel,
+    this.conflitos = const {},
   });
 
   final Dia dia;
@@ -619,10 +633,16 @@ class _DiaSelecionado extends StatelessWidget {
   final VoidCallback onNova;
   final bool editavel;
 
+  /// Conflitos do dia, indexados por id de atividade.
+  final Map<String, List<Conflito>> conflitos;
+
   @override
   Widget build(BuildContext context) {
     final paleta = EscopoUi.de(context);
     final estreito = MediaQuery.sizeOf(context).width < 440;
+    final doDia = dia.ordenadas
+        .expand((a) => conflitos[a.id] ?? const <Conflito>[])
+        .toSet();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -644,6 +664,10 @@ class _DiaSelecionado extends StatelessWidget {
             ),
           ],
         ),
+        if (doDia.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _ResumoConflitos(conflitos: doDia.toList(), paleta: paleta),
+        ],
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
@@ -673,6 +697,7 @@ class _DiaSelecionado extends StatelessWidget {
                   concluida: semana.concluidaEm(data, atividade),
                   estreito: estreito,
                   editavel: editavel,
+                  conflitos: conflitos[atividade.id] ?? const [],
                   onAlternar: () => onAlternar(atividade),
                   onEditar: () => onEditar(atividade),
                   onExcluir: () => onExcluir(atividade),
@@ -693,6 +718,56 @@ class _DiaSelecionado extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Faixa acima da timeline quando o dia tem sobreposições.
+///
+/// Resume o que a lista já mostra linha a linha: quantos choques e entre quem.
+/// Não é um erro — a rotina pode ter sobreposição de propósito —, então o tom é
+/// informativo.
+class _ResumoConflitos extends StatelessWidget {
+  const _ResumoConflitos({required this.conflitos, required this.paleta});
+
+  final List<Conflito> conflitos;
+  final PaletaUi paleta;
+
+  @override
+  Widget build(BuildContext context) {
+    final titulos = <String>{};
+    for (final c in conflitos) {
+      titulos
+        ..add(c.primeira.titulo)
+        ..add(c.segunda.titulo);
+    }
+    final texto = conflitos.length == 1
+        ? '1 sobreposição de horário: ${conflitos.single.primeira.titulo} e '
+              '${conflitos.single.segunda.titulo} se cruzam por '
+              '${conflitos.single.minutosTexto}.'
+        : '${conflitos.length} sobreposições de horário entre '
+              '${titulos.length} atividades neste dia.';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: paleta.avisoSuave.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(paleta.raioMedio),
+        border: Border.all(color: paleta.aviso.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 15, color: paleta.aviso),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              texto,
+              style: TextStyle(fontSize: 12, height: 1.3, color: paleta.aviso),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

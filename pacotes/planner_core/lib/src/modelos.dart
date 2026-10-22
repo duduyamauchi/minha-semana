@@ -104,6 +104,12 @@ class Atividade {
     return duracao.isEmpty ? horario : '$horario · $duracao';
   }
 
+  /// Intervalo compacto para mensagens: `06:00–06:45` ou só `06:00`.
+  String get faixaComTermino {
+    final fim = termino;
+    return fim == null ? horario : '$horario–$fim';
+  }
+
   /// Minutos desde a meia-noite, para ordenar; horário inválido vai para o fim.
   int get minutosDoDia => Horario.minutos(horario) ?? 24 * 60;
 

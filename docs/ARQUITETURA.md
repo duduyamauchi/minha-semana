@@ -135,6 +135,29 @@ O formato v4 trouxe a data. Estados v2/v3 (marcações sem data) **não são
 adivinhados**: as marcações antigas são descartadas e o template é preservado.
 Atribuí-las a um dia seria inventar informação.
 
+### Conflitos de horário
+
+`Conflitos` (`conflitos.dart`) é **Dart puro** e derivado: recebe as atividades de
+um dia e devolve os pares que se sobrepõem. Não é estado, não vai para o banco e
+não bloqueia nada.
+
+| Situação | Conflito? |
+| --- | --- |
+| 06:00 + 10 min × 06:10 | não — termina exatamente no início |
+| 06:00 + 25 min × 06:10 | **sim** — 15 min em comum |
+| 06:00 + 25 min × 06:10 (sem duração) | **sim** — o instante cai dentro |
+| 06:00 sem duração × 06:00 sem duração | não — não ocupam tempo |
+| 09:00 + 3h × 10:00 | **sim** |
+
+O intervalo é semiaberto (`[início, fim)`), mas um item pontual conta no início
+também: dois compromissos às 06:00 se chocam. É a regra que faz o template
+original — blocos encaixados um no fim do outro — não acusar conflito nenhum.
+
+A tela usa `Repositorio.conflitosDoDia` (mapa id → conflitos) e o editor usa
+`Conflitos.deAtividade` com a atividade **como está no formulário**, então o
+aviso acompanha a digitação. Em nenhum caminho a gravação é recusada por
+conflito.
+
 ### Navegação
 
 | Rota | O que abre |

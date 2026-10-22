@@ -14,6 +14,7 @@ export 'src/analytics/analytics.dart';
 export 'src/analytics/coletor.dart';
 export 'src/analytics/evento.dart';
 export 'src/dados_semana.dart';
+export 'src/conflitos.dart';
 export 'src/datas.dart';
 export 'src/fonte_dados.dart';
 export 'src/fonte_http.dart';

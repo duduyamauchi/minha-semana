@@ -49,6 +49,11 @@ abertura; dali em diante, criar/editar/excluir atividades é operação de tela.
 semanas; o que muda por data é o que foi feito. Marcar uma quarta não marca as
 outras, e "começar nova semana" afeta só a semana visível.
 
+**Conflito de horário é aviso, não bloqueio.** Se uma atividade com duração
+invade a seguinte (06:00 com 25 min engole o compromisso das 06:10), a linha e o
+editor mostram o choque — e salvar continua liberado. A rotina pode ter
+sobreposição de propósito.
+
 ### Segurança
 
 | Item | Como está |

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'analytics/analytics.dart';
 import 'analytics/coletor.dart';
 import 'dados_semana.dart';
+import 'conflitos.dart';
 import 'datas.dart';
 import 'fonte_dados.dart';
 import 'horario.dart';
@@ -43,13 +44,30 @@ class Repositorio extends ChangeNotifier {
   DateTime Function() agora = DateTime.now;
 
   /// Data aberta na timeline. Navegar por semanas muda esta data, não o plano.
-  DateTime _selecionado = Datas.hoje();
+  /// Data escolhida explicitamente. `null` significa "hoje", resolvido a cada
+  /// leitura contra [agora].
+  ///
+  /// Guardar `DateTime.now()` no construtor congelava o dia da criação: um teste
+  /// que injeta `agora` via continuava abrindo a data real, e o app aberto à
+  /// meia-noite ficaria no dia anterior.
+  DateTime? _selecionadoFixo;
 
   /// Data aberta na timeline (sem hora).
-  DateTime get selecionado => _selecionado;
+  /// Data aberta: a escolhida ou, sem escolha, hoje (segundo [agora]).
+  DateTime get selecionado => _selecionadoFixo ?? Datas.hoje(agora());
 
   /// A semana da data aberta, com progresso por dia.
-  Agenda get agenda => Agenda.de(_semana, _selecionado);
+  Agenda get agenda => Agenda.de(_semana, selecionado);
+
+  /// Conflitos de horário do dia [chave], indexados por atividade.
+  ///
+  /// Derivado do template (não é estado): a mesma rotina tem os mesmos choques
+  /// em todas as semanas, então não há nada a persistir nem a sincronizar.
+  Map<String, List<Conflito>> conflitosDoDia(String chave) {
+    final dia = _semana.dia(chave);
+    if (dia == null) return const {};
+    return Conflitos.porAtividade(dia.atividades);
+  }
 
   /// Abre outra data (dentro ou fora da semana atual).
   ///
@@ -57,24 +75,28 @@ class Repositorio extends ChangeNotifier {
   /// marcações são consultadas pela data.
   void irPara(DateTime data) {
     final alvo = Datas.dia(data);
-    if (Datas.mesmoDia(alvo, _selecionado)) return;
-    _selecionado = alvo;
+    if (Datas.mesmoDia(alvo, selecionado)) return;
+    _selecionadoFixo = alvo;
     _erro = null;
     notifyListeners();
   }
 
   /// Abre a semana de [data], mantendo o mesmo dia da semana quando possível.
   void irParaSemana(DateTime data) {
-    final mesmaPosicao = Datas.indiceNaSemana(_selecionado);
+    final mesmaPosicao = Datas.indiceNaSemana(selecionado);
     final segunda = Datas.segundaDe(data);
     irPara(Datas.somarDias(segunda, mesmaPosicao));
   }
 
-  /// Volta para hoje.
-  void irParaHoje() => irPara(Datas.hoje(agora()));
+  /// Volta para hoje (e deixa de fixar uma data).
+  void irParaHoje() {
+    _selecionadoFixo = null;
+    _erro = null;
+    notifyListeners();
+  }
 
   /// Avança ou recua semanas.
-  void moverSemana(int semanas) => irPara(Datas.somarDias(_selecionado, semanas * 7));
+  void moverSemana(int semanas) => irPara(Datas.somarDias(selecionado, semanas * 7));
 
   // ---------------------------------------------------------------------------
   // Estado
@@ -112,7 +134,7 @@ class Repositorio extends ChangeNotifier {
   /// semana, não à quinta. Sem isso, a marcação não apareceria em lugar nenhum
   /// (nem no dia, nem no progresso).
   DateTime dataDaAtividade(Atividade atividade, {DateTime? data}) {
-    final referencia = Datas.dia(data ?? _selecionado);
+    final referencia = Datas.dia(data ?? selecionado);
     if (Semana.chaveDaData(referencia) == atividade.dia) return referencia;
     final semana = Agenda.de(_semana, referencia);
     for (final d in semana.datas) {
@@ -155,7 +177,7 @@ class Repositorio extends ChangeNotifier {
 
   /// Verdadeiro quando a atividade está marcada na data aberta.
   bool concluidaNaData(Atividade atividade, {DateTime? data}) =>
-      _semana.concluidaEm(data ?? _selecionado, atividade);
+      _semana.concluidaEm(data ?? selecionado, atividade);
 
   /// Atividade nova, ainda não persistida, no dia indicado.
   ///

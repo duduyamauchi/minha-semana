@@ -19,6 +19,8 @@ class PaletaUi {
     required this.movimento,
     required this.casa,
     required this.bemEstar,
+    this.aviso = const Color(0xFF8A6A1F),
+    this.avisoSuave = const Color(0xFFF3E9D2),
     this.raioMedio = 12,
     this.raioGrande = 16,
   });
@@ -40,6 +42,15 @@ class PaletaUi {
   final Color casa;
   final Color bemEstar;
 
+  /// Cor de aviso (conflito de horário): âmbar, distinto das categorias.
+  ///
+  /// Não usa a cor de "movimento" (laranja) para não confundir um aviso com a
+  /// categoria da atividade.
+  final Color aviso;
+
+  /// Fundo suave do aviso.
+  final Color avisoSuave;
+
   final double raioMedio;
   final double raioGrande;
 
@@ -56,6 +67,8 @@ class PaletaUi {
     movimento: Color(0xFFC4572E),
     casa: Color(0xFF2F8A63),
     bemEstar: Color(0xFF8A6A1F),
+    aviso: Color(0xFF9A6B12),
+    avisoSuave: Color(0xFFF5EBD6),
   );
 
   /// Paleta escura — o bloco `prefers-color-scheme: dark` do HTML.
@@ -71,6 +84,8 @@ class PaletaUi {
     movimento: Color(0xFFEE8A62),
     casa: Color(0xFF6DCF9F),
     bemEstar: Color(0xFFD7B25A),
+    aviso: Color(0xFFE0B75E),
+    avisoSuave: Color(0xFF3A3220),
   );
 }
 

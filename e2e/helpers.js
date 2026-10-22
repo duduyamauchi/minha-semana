@@ -157,6 +157,10 @@ export async function abrirEditor(page, nome) {
   // Longe do checkbox (direita) e do menu (extrema direita): 30% da largura.
   await page.mouse.click(caixa.x + caixa.width * 0.3, caixa.y + caixa.height / 2);
   await expect(page.getByText(/Nova atividade|Editar atividade/)).toBeVisible();
+  // O modal anima: esperar o campo de título evita digitar durante a transição
+  // (o `enterText` num campo que acabou de montar pode se perder).
+  await expect(page.locator('input[aria-label="Título"]')).toBeVisible();
+  await page.waitForTimeout(250);
 }
 
 /** Escapa caracteres especiais de regex num texto. */

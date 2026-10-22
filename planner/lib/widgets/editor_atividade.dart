@@ -36,18 +36,29 @@ Future<ResultadoEdicao?> abrirEditorAtividade(
   BuildContext context, {
   required Atividade atividade,
   required bool nova,
+  List<Atividade> doDia = const [],
 }) => showModalBottomSheet<ResultadoEdicao>(
   context: context,
   isScrollControlled: true,
   backgroundColor: Colors.transparent,
-  builder: (_) => _EditorAtividade(atividade: atividade, nova: nova),
+  builder: (_) => _EditorAtividade(atividade: atividade, nova: nova, doDia: doDia),
 );
 
 class _EditorAtividade extends StatefulWidget {
-  const _EditorAtividade({required this.atividade, required this.nova});
+  const _EditorAtividade({
+    required this.atividade,
+    required this.nova,
+    this.doDia = const [],
+  });
 
   final Atividade atividade;
   final bool nova;
+
+  /// As outras atividades do dia — base do aviso de sobreposição.
+  ///
+  /// O editor **avisa**, não bloqueia: choques de horário podem ser
+  /// intencionais (uma leitura durante o almoço, por exemplo).
+  final List<Atividade> doDia;
 
   @override
   State<_EditorAtividade> createState() => _EditorAtividadeState();
@@ -311,6 +322,7 @@ class _EditorAtividadeState extends State<_EditorAtividade> {
                         color: paleta.textoSecundario,
                       ),
                     ),
+                    ..._avisoConflitos(context, paleta),
                     const SizedBox(height: 18),
                     Text(
                       'Categoria',
@@ -410,6 +422,87 @@ class _EditorAtividadeState extends State<_EditorAtividade> {
         ),
       ),
     );
+  }
+
+  /// Aviso de sobreposição, recalculado a cada alteração de horário/duração.
+  ///
+  /// Devolve vazio quando não há choque. O texto nomeia a outra atividade e o
+  /// trecho em comum; a gravação continua liberada (o botão de salvar nunca é
+  /// desabilitado por conflito).
+  List<Widget> _avisoConflitos(BuildContext context, PaletaUi paleta) {
+    final inicio = Horario.normalizar(_horario.text);
+    final duracao = _duracao;
+    if (inicio == null || duracao == null || duracao > 24 * 60) return const [];
+
+    // A atividade como está no formulário, para o cálculo enxergar o que ainda
+    // não foi salvo.
+    final rascunho = widget.atividade.copiarCom(
+      horario: inicio,
+      duracaoMinutos: duracao,
+      limparDuracao: false,
+      titulo: _titulo.text.trim().isEmpty ? widget.atividade.titulo : _titulo.text.trim(),
+    );
+    final conflitos = Conflitos.deAtividade(rascunho, widget.doDia);
+    if (conflitos.isEmpty) return const [];
+
+    return [
+      const SizedBox(height: 8),
+      Container(
+        key: const Key('aviso-conflito-editor'),
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        decoration: BoxDecoration(
+          color: paleta.avisoSuave.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(paleta.raioMedio),
+          border: Border.all(color: paleta.aviso.withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 15, color: paleta.aviso),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    conflitos.length == 1
+                        ? 'Este horário sobrepõe outra atividade.'
+                        : 'Este horário sobrepõe ${conflitos.length} atividades.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: paleta.aviso,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            for (final c in conflitos)
+              Padding(
+                padding: const EdgeInsets.only(left: 21, top: 3),
+                child: Text(
+                  // Item pontual não tem tempo em comum para medir: o choque é
+                  // o instante ocupado, e a frase diz isso sem inventar minutos.
+                  '${c.outraDe(rascunho)?.titulo ?? 'Atividade'} · '
+                  '${c.outraDe(rascunho)?.faixaComTermino ?? ''} · '
+                  '${c.minutos == 0 ? 'ocupa este horário' : '${c.minutosTexto} em comum'}',
+                  style: TextStyle(fontSize: 12, height: 1.3, color: paleta.aviso),
+                ),
+              ),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 21),
+              child: Text(
+                'Você pode salvar assim mesmo.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: paleta.aviso.withValues(alpha: 0.85),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 
   String _resumoHorario() {

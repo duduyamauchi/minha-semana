@@ -27,6 +27,7 @@ class LinhaAtividade extends StatelessWidget {
     required this.onExcluir,
     this.estreito = false,
     this.editavel = true,
+    this.conflitos = const [],
   });
 
   final Atividade atividade;
@@ -35,6 +36,11 @@ class LinhaAtividade extends StatelessWidget {
   final VoidCallback onEditar;
   final VoidCallback onExcluir;
   final bool estreito;
+
+  /// Choques de horário que envolvem esta atividade.
+  ///
+  /// Aviso, não bloqueio: a linha continua marcável e editável.
+  final List<Conflito> conflitos;
 
   /// Falso quando a fonte é somente leitura.
   final bool editavel;
@@ -57,7 +63,15 @@ class LinhaAtividade extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
           decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: paleta.borda)),
+            // Fundo âmbar muito leve quando há sobreposição: o aviso é visível
+            // na varredura da lista sem competir com a cor da categoria.
+            color: conflitos.isEmpty ? null : paleta.avisoSuave.withValues(alpha: 0.45),
+            border: Border(
+              bottom: BorderSide(color: paleta.borda),
+              left: conflitos.isEmpty
+                  ? BorderSide.none
+                  : BorderSide(color: paleta.aviso, width: 3),
+            ),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -142,6 +156,15 @@ class LinhaAtividade extends StatelessWidget {
                           ],
                         ],
                       ),
+                      if (conflitos.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        _AvisoConflito(
+                          conflitos: conflitos,
+                          atividade: atividade,
+                          paleta: paleta,
+                          estreito: estreito,
+                        ),
+                      ],
                       if (atividade.temDetalhe) ...[
                         const SizedBox(height: 2),
                         Text(
@@ -224,7 +247,80 @@ class LinhaAtividade extends StatelessWidget {
       partes.add('duração ${atividade.duracaoTexto}');
     }
     if (concluida) partes.add('concluída');
+    if (conflitos.isNotEmpty) {
+      partes.add(
+        conflitos.length == 1
+            ? 'conflito de horário com ${conflitos.single.outraDe(atividade)?.titulo ?? 'outra atividade'}'
+            : '${conflitos.length} conflitos de horário',
+      );
+    }
     return partes.join(', ');
+  }
+}
+
+/// Aviso de sobreposição dentro da linha.
+///
+/// Mostra a outra atividade e o intervalo; com mais de um conflito, resume e
+/// lista os horários. Texto pequeno e cor de aviso: informa sem transformar a
+/// timeline numa tela de erro.
+class _AvisoConflito extends StatelessWidget {
+  const _AvisoConflito({
+    required this.conflitos,
+    required this.atividade,
+    required this.paleta,
+    required this.estreito,
+  });
+
+  final List<Conflito> conflitos;
+  final Atividade atividade;
+  final PaletaUi paleta;
+  final bool estreito;
+
+  @override
+  Widget build(BuildContext context) {
+    if (conflitos.length == 1) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 13, color: paleta.aviso),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              conflitos.single.descricaoPara(atividade),
+              style: TextStyle(
+                fontSize: 11.5,
+                height: 1.3,
+                color: paleta.aviso,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    final outras = conflitos
+        .map((c) => c.outraDe(atividade))
+        .whereType<Atividade>()
+        .map((a) => '${a.titulo} (${a.faixaComTermino})')
+        .join(', ');
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.error_outline, size: 13, color: paleta.aviso),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            '${conflitos.length} conflitos de horário · $outras',
+            style: TextStyle(
+              fontSize: 11.5,
+              height: 1.3,
+              color: paleta.aviso,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

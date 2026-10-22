@@ -246,6 +246,7 @@ test.describe('plano editável pela interface', () => {
     await digitar(page, 'Detalhe (opcional)', 'com música');
     await page.getByRole('button', { name: /^Estudo/ }).click();
     await page.getByRole('button', { name: 'Salvar' }).click();
+    await expect(page.getByText(/Editar atividade|Nova atividade/)).toHaveCount(0);
 
     await expect(page.getByRole('checkbox', { name: `Marcar ${nome} revisada como feito` })).toBeVisible();
     // O detalhe compõe o rótulo do grupo, não um texto solto.
