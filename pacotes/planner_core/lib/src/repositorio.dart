@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'analytics/analytics.dart';
 import 'analytics/coletor.dart';
 import 'dados_semana.dart';
+import 'datas.dart';
 import 'fonte_dados.dart';
 import 'horario.dart';
 import 'modelos.dart';
@@ -19,7 +20,11 @@ class Repositorio extends ChangeNotifier {
   Repositorio(this.fonte, {Analytics? analytics, List<Dia>? template})
     : analytics = analytics ?? Analytics(const ColetorNulo()),
       _base = template ?? construirPlanoInicial(),
-      _semana = Semana(dias: template ?? construirPlanoInicial(), marcadas: const {}, comodos: comodosPadrao());
+      _semana = Semana(
+        dias: template ?? construirPlanoInicial(),
+        concluidas: const {},
+        comodos: comodosPadrao(),
+      );
 
   /// Plano de partida: usado só enquanto a fonte não devolve dias (estado v2).
   final List<Dia> _base;
@@ -37,6 +42,40 @@ class Repositorio extends ChangeNotifier {
   /// Data de referência do "hoje" — fixável nos testes.
   DateTime Function() agora = DateTime.now;
 
+  /// Data aberta na timeline. Navegar por semanas muda esta data, não o plano.
+  DateTime _selecionado = Datas.hoje();
+
+  /// Data aberta na timeline (sem hora).
+  DateTime get selecionado => _selecionado;
+
+  /// A semana da data aberta, com progresso por dia.
+  Agenda get agenda => Agenda.de(_semana, _selecionado);
+
+  /// Abre outra data (dentro ou fora da semana atual).
+  ///
+  /// Só muda o que a tela lê: o template é o mesmo para todas as semanas, e as
+  /// marcações são consultadas pela data.
+  void irPara(DateTime data) {
+    final alvo = Datas.dia(data);
+    if (Datas.mesmoDia(alvo, _selecionado)) return;
+    _selecionado = alvo;
+    _erro = null;
+    notifyListeners();
+  }
+
+  /// Abre a semana de [data], mantendo o mesmo dia da semana quando possível.
+  void irParaSemana(DateTime data) {
+    final mesmaPosicao = Datas.indiceNaSemana(_selecionado);
+    final segunda = Datas.segundaDe(data);
+    irPara(Datas.somarDias(segunda, mesmaPosicao));
+  }
+
+  /// Volta para hoje.
+  void irParaHoje() => irPara(Datas.hoje(agora()));
+
+  /// Avança ou recua semanas.
+  void moverSemana(int semanas) => irPara(Datas.somarDias(_selecionado, semanas * 7));
+
   // ---------------------------------------------------------------------------
   // Estado
   // ---------------------------------------------------------------------------
@@ -51,9 +90,12 @@ class Repositorio extends ChangeNotifier {
   bool get pronto => _estado == EstadoCarga.pronto;
   bool get permiteEscrita => fonte.permiteEscrita && _estado == EstadoCarga.pronto;
 
-  int get percentual => _semana.percentual;
-  int get totalFeitas => _semana.totalFeitas;
-  int get totalAtividades => _semana.totalAtividades;
+  /// Percentual da semana aberta (não do histórico inteiro).
+  int get percentual => agenda.percentualDaSemana;
+  int get totalFeitas => agenda.feitasNaSemana;
+  int get totalAtividades => agenda.totalDaSemana;
+
+  bool get hojeNaSemana => agenda.datas.any((d) => Datas.mesmoDia(d, Datas.hoje(agora())));
 
   /// Índice do dia de hoje (segunda = 0), calculado a cada leitura para que o
   /// app atravesse a meia-noite sem reiniciar.
@@ -62,32 +104,58 @@ class Repositorio extends ChangeNotifier {
   /// O estado está em um servidor, não no aparelho.
   bool get fonteRemota => fonte.remota;
 
-  /// Conclui ou não uma atividade. Devolve `false` quando a gravação falha.
-  Future<bool> marcar(Atividade atividade, {required bool concluida}) => _aplicar(
-    (atual) {
-      final marcadas = Set<String>.of(atual.marcadas);
-      if (concluida) {
-        marcadas.add(atividade.id);
-      } else {
-        marcadas.remove(atividade.id);
-      }
-      return atual.copiarCom(marcadas: marcadas);
-    },
-    gravar: () => fonte.definirConcluida(atividade.id, concluida: concluida),
-    evento: concluida ? 'atividade_concluida' : 'atividade_desmarcada',
-    propriedades: {
-      'atividade': atividade.titulo,
-      'horario': atividade.horario,
-      'categoria': atividade.categoria.chave,
-      'dia': atividade.dia,
-    },
-    entidade: 'atividade',
-    entidadeId: atividade.id,
-  );
+  /// Data em que a marcação de [atividade] deve cair.
+  ///
+  /// Se a data pedida já é o dia da semana da atividade, é ela. Caso contrário
+  /// usa o mesmo dia da semana **dentro da semana aberta**: uma atividade de
+  /// segunda marcada enquanto a tela mostra quinta pertence à segunda daquela
+  /// semana, não à quinta. Sem isso, a marcação não apareceria em lugar nenhum
+  /// (nem no dia, nem no progresso).
+  DateTime dataDaAtividade(Atividade atividade, {DateTime? data}) {
+    final referencia = Datas.dia(data ?? _selecionado);
+    if (Semana.chaveDaData(referencia) == atividade.dia) return referencia;
+    final semana = Agenda.de(_semana, referencia);
+    for (final d in semana.datas) {
+      if (Semana.chaveDaData(d) == atividade.dia) return d;
+    }
+    return referencia;
+  }
 
-  /// Inverte a marcação de uma atividade.
-  Future<bool> alternar(Atividade atividade) =>
-      marcar(atividade, concluida: !_semana.concluida(atividade));
+  /// Conclui ou não uma atividade **na semana aberta**.
+  ///
+  /// A data é explícita porque a mesma atividade existe em todas as semanas:
+  /// marcar a quarta não pode marcar todas as quartas.
+  Future<bool> marcar(
+    Atividade atividade, {
+    required bool concluida,
+    DateTime? data,
+  }) {
+    final alvo = dataDaAtividade(atividade, data: data);
+    return _aplicar(
+      (atual) => atual.definirConcluida(alvo, atividade.id, concluida: concluida),
+      gravar: () => fonte.definirConcluida(alvo, atividade.id, concluida: concluida),
+      evento: concluida ? 'atividade_concluida' : 'atividade_desmarcada',
+      propriedades: {
+        'atividade': atividade.titulo,
+        'horario': atividade.horario,
+        'categoria': atividade.categoria.chave,
+        'dia': atividade.dia,
+        'data': Datas.iso(alvo),
+      },
+      entidade: 'atividade',
+      entidadeId: atividade.id,
+    );
+  }
+
+  /// Inverte a marcação de uma atividade na semana aberta.
+  Future<bool> alternar(Atividade atividade, {DateTime? data}) {
+    final alvo = dataDaAtividade(atividade, data: data);
+    return marcar(atividade, concluida: !_semana.concluidaEm(alvo, atividade), data: alvo);
+  }
+
+  /// Verdadeiro quando a atividade está marcada na data aberta.
+  bool concluidaNaData(Atividade atividade, {DateTime? data}) =>
+      _semana.concluidaEm(data ?? _selecionado, atividade);
 
   /// Atividade nova, ainda não persistida, no dia indicado.
   ///
@@ -171,15 +239,20 @@ class Repositorio extends ChangeNotifier {
     entidadeId: atividade.id,
   );
 
-  /// Desmarca a semana inteira, preservando o plano e os cômodos.
+  /// Desmarca a semana aberta, preservando o template e os cômodos.
   ///
-  /// É a ação "Começar nova semana" do planejador original.
-  Future<bool> limparMarcacoes() => _aplicar(
-    (atual) => atual.copiarCom(marcadas: const <String>{}),
-    gravar: () => fonte.limparMarcacoes(),
-    evento: 'semana_reiniciada',
-    propriedades: {'marcadasAntes': _semana.marcadas.length},
-  );
+  /// É a ação "Começar nova semana" do planejador original — agora restrita à
+  /// semana visível: as anteriores ficam no histórico, como um calendário.
+  Future<bool> limparMarcacoes() {
+    final inicio = agenda.inicio;
+    final antes = agenda.feitasNaSemana;
+    return _aplicar(
+      (atual) => atual.limparIntervalo(inicio),
+      gravar: () => fonte.limparMarcacoes(inicio),
+      evento: 'semana_reiniciada',
+      propriedades: {'marcadasAntes': antes, 'semana': Datas.iso(inicio)},
+    );
+  }
 
   /// Marca ou desmarca um cômodo da reorganização.
   Future<bool> alternarComodo(Comodo comodo) {
@@ -234,7 +307,7 @@ class Repositorio extends ChangeNotifier {
     gravar: () => fonte.salvar(novo),
     evento: 'semana_importada',
     propriedades: {
-      'marcadas': novo.marcadas.length,
+      'diasComMarcacao': novo.concluidas.length,
       'comodos': novo.comodos.length,
       'atividades': novo.dias?.fold<int>(0, (s, d) => s + d.atividades.length),
     },
@@ -254,7 +327,7 @@ class Repositorio extends ChangeNotifier {
       // carregamento.
       _semana = Semana(
         dias: estado.dias ?? _base,
-        marcadas: estado.marcadas,
+        concluidas: estado.concluidas,
         comodos: estado.comodos,
       );
       _estado = EstadoCarga.pronto;
@@ -263,7 +336,7 @@ class Repositorio extends ChangeNotifier {
         'semana_carregada',
         propriedades: {
           'fonte': fonte.descricao,
-          'marcadas': _semana.marcadas.length,
+          'diasComMarcacao': _semana.concluidas.length,
           'comodos': _semana.comodos.length,
           'atividades': _semana.totalAtividades,
         },
@@ -329,7 +402,7 @@ class Repositorio extends ChangeNotifier {
         propriedades: {
           ...propriedades,
           'fonte': fonte.descricao,
-          'percentual': _semana.percentual,
+          'percentual': agenda.percentualDaSemana,
         },
         entidade: entidade,
         entidadeId: entidadeId,

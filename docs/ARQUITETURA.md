@@ -75,10 +75,10 @@ marcando/editando uma atividade, e as duas alterações sobrevivem.
 
 | Operação | Contrato | Rota |
 | --- | --- | --- |
-| marcar/desmarcar | `definirConcluida` | `PUT /atividades/:id` |
+| marcar/desmarcar numa data | `definirConcluida(data, id)` | `PUT /atividades/:data/:id` |
 | criar/editar atividade | `salvarAtividade` | `PUT /dias/:dia/atividades/:id` |
 | excluir atividade | `removerAtividade` | `DELETE /dias/:dia/atividades/:id` |
-| desmarcar a semana | `limparMarcacoes` | `DELETE /atividades` |
+| desmarcar a semana | `limparMarcacoes(segunda)` | `DELETE /atividades?inicio=AAAA-MM-DD` |
 | importar backup | `salvar` | `PUT /semana` |
 
 A separação entre "marcação" e "plano" é intencional: marcar é a ação frequente e
@@ -91,12 +91,15 @@ todos e fala uma rota por operação.
 
 ### O que se persiste
 
-O plano inteiro, mais o que já foi feito:
+O plano (template), as marcações **por data** e os cômodos:
 
 ```json
 {
-  "versao": 3,
-  "marcadas": ["qua-09:00", "dom-22:00"],
+  "versao": 4,
+  "concluidas": {
+    "2026-10-21": ["qua-09:00", "qua-13:30"],
+    "2026-10-22": ["qui-11:00"]
+  },
   "comodos": [{ "id": "cozinha", "nome": "Cozinha", "concluido": true }],
   "dias": [
     {
@@ -113,8 +116,37 @@ O plano inteiro, mais o que já foi feito:
 **O plano é dado do usuário.** Criar, editar (horário, duração, título,
 detalhe, categoria, flags) e excluir atividades são operações de tela, não
 mudanças de código. `dados_semana.dart` virou apenas a semente: o que a primeira
-abertura mostra, e o ponto de partida para estados gravados no formato v2 (que
-não tinham `dias`).
+abertura mostra, e o ponto de partida para estados antigos (v2/v3), que não
+tinham `dias`.
+
+### Duas dimensões de tempo
+
+| Dimensão | Onde vive | O que significa |
+| --- | --- | --- |
+| dia da semana (`seg`…`dom`) | template (`dias`) | a rotina que se repete |
+| data (`2026-10-21`) | marcações (`concluidas`) | o que foi feito naquele dia |
+
+Sem essa separação, marcar uma quarta marcaria todas as quartas — e "navegar
+por semanas" não teria o que mostrar de diferente. A `Agenda` cruza as duas:
+recebe uma data, calcula a semana (segunda a domingo) e responde progresso por
+dia e da semana. Nada é copiado: os dias apontam para o mesmo template.
+
+O formato v4 trouxe a data. Estados v2/v3 (marcações sem data) **não são
+adivinhados**: as marcações antigas são descartadas e o template é preservado.
+Atribuí-las a um dia seria inventar informação.
+
+### Navegação
+
+| Rota | O que abre |
+| --- | --- |
+| `/semana` | semana de hoje |
+| `/semana/2026-10-21` | semana daquela data, com aquele dia aberto |
+| `/dia/qua` | a próxima quarta da semana aberta (link antigo) |
+| `/calendario` | mês + prancha dos sete dias |
+
+A data na URL é o que faz recarregar a página manter a semana e o link ser
+compartilhável. `TelaSemana` avisa o roteador (`context.replace`) a cada
+mudança, então o endereço nunca mente sobre o que está na tela.
 
 O ID de uma atividade é opaco e **não** muda ao editar — `seg-06:00` na
 criação, com sufixo (`seg-06:00-2`) quando o par dia/horário já está ocupado. É

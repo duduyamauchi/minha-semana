@@ -109,8 +109,9 @@ class _TelaAjustesState extends State<TelaAjustes> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'O estado é um JSON pequeno: marcações e cômodos. Exporte para guardar '
-                        'uma cópia ou para levar o plano de um aparelho a outro.',
+                        'O estado é um JSON pequeno: o plano, as marcações por data e os '
+                        'cômodos. Exporte para guardar uma cópia ou para levar tudo de um '
+                        'aparelho a outro.',
                         style: TextStyle(
                           fontSize: 13.5,
                           color: paleta.textoSecundario,
@@ -261,7 +262,8 @@ class _TelaAjustesState extends State<TelaAjustes> {
       setState(() {
         _erro = ok ? null : rep.erro;
         _aviso = ok
-            ? 'Semana importada: ${estado.marcadas.length} atividades e ${estado.comodos.length} cômodos.'
+            ? 'Estado importado: ${estado.concluidas.length} dias com marcações e '
+                  '${estado.comodos.length} cômodos.'
             : null;
       });
     } catch (_) {

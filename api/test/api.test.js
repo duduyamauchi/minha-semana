@@ -33,6 +33,8 @@ const env = {
  */
 function banco({ papel = 'proprietario', senhaHash = null } = {}) {
   const estado = {
+    // Chave `data|id`, como a PK da tabela. Um `Set` simples manteria o índice
+    // de consulta por data trivial de conferir nos testes.
     marcadas: new Set(),
     comodos: new Map(),
     // Plano: id -> atividade. Espelha a tabela `atividades`.
@@ -55,8 +57,13 @@ function banco({ papel = 'proprietario', senhaHash = null } = {}) {
     if (consulta.includes('insert into tentativas_login') || consulta.includes('delete from tentativas_login')) {
       return [];
     }
-    if (consulta.includes('select atividade_id from atividades_concluidas')) {
-      return [...estado.marcadas].sort().map((id) => ({ atividade_id: id }));
+    if (consulta.includes('select data, atividade_id from atividades_concluidas')) {
+      return [...estado.marcadas]
+        .sort()
+        .map((chave) => {
+          const [data, ...resto] = chave.split('|');
+          return { data, atividade_id: resto.join('|') };
+        });
     }
     if (consulta.includes('delete from atividades where')) {
       // Sem id no `where` (substituição total), limpa o plano inteiro.
@@ -96,21 +103,37 @@ function banco({ papel = 'proprietario', senhaHash = null } = {}) {
       return [...estado.comodos.values()].sort((a, b) => a.nome.localeCompare(b.nome));
     }
     if (consulta.includes('delete from atividades_concluidas')) {
-      if (consulta.includes('atividade_id =')) {
-        estado.marcadas.delete(valores[1]);
+      if (consulta.includes('data between')) {
+        // DELETE ?inicio=...
+        const inicio = valores[1];
+        const fim = new Date(`${inicio}T00:00:00Z`);
+        fim.setUTCDate(fim.getUTCDate() + 6);
+        const limite = fim.toISOString().slice(0, 10);
+        for (const chave of [...estado.marcadas]) {
+          const data = chave.split('|')[0];
+          if (data >= inicio && data <= limite) estado.marcadas.delete(chave);
+        }
+      } else if (consulta.includes('data =')) {
+        // Marcação individual: `where … and data = ? and atividade_id = ?`.
+        // Vem antes do caso "só id", pois também contém `atividade_id =`.
+        estado.marcadas.delete(`${valores[1]}|${valores[2]}`);
+      } else if (consulta.includes('atividade_id =')) {
+        const id = valores[1];
+        for (const chave of [...estado.marcadas]) {
+          if (chave.split('|').slice(1).join('|') === id) estado.marcadas.delete(chave);
+        }
       } else {
         estado.marcadas.clear();
       }
       return [];
     }
     if (consulta.includes('insert into atividades_concluidas')) {
-      // Marcação individual manda um id; a importação manda a lista inteira
-      // para o `unnest`.
-      const alvo = valores[1];
-      if (Array.isArray(alvo)) {
-        for (const id of alvo) estado.marcadas.add(id);
+      // Marcação individual: (quadro, data, id). Importação: dois arrays.
+      const [primeiro, segundo, terceiro] = valores.slice(1);
+      if (Array.isArray(primeiro)) {
+        primeiro.forEach((data, i) => estado.marcadas.add(`${data}|${segundo[i]}`));
       } else {
-        estado.marcadas.add(alvo);
+        estado.marcadas.add(`${primeiro}|${segundo}`);
       }
       return [];
     }
@@ -167,13 +190,18 @@ test('sem sessão, nem a leitura da semana passa', async () => {
 
 test('GET /semana devolve o formato que o app espera', async () => {
   const { sql, estado } = banco();
-  estado.marcadas.add('seg-06:00');
+  estado.marcadas.add('2026-10-19|seg-06:00');
+  estado.marcadas.add('2026-10-21|qua-06:00');
   estado.comodos.set('cozinha', { id: 'cozinha', nome: 'Cozinha', concluido: true });
 
   const r = await tratar(pedir('/semana', { cookie: await comSessao() }), env, sql);
   assert.equal(r.status, 200);
   const corpo = await r.json();
-  assert.deepEqual(corpo.marcadas, ['seg-06:00']);
+  assert.equal(corpo.versao, 4);
+  assert.deepEqual(corpo.concluidas, {
+    '2026-10-19': ['seg-06:00'],
+    '2026-10-21': ['qua-06:00'],
+  });
   assert.deepEqual(corpo.comodos, [{ id: 'cozinha', nome: 'Cozinha', concluido: true }]);
 });
 
@@ -221,39 +249,80 @@ test('usuário inexistente responde igual a senha errada', async () => {
   assert.equal((await r.json()).erro, 'Usuário ou senha inválidos.');
 });
 
-test('PUT /atividades/:id marca e desmarca', async () => {
+test('PUT /atividades/:data/:id marca e desmarca naquela data', async () => {
   const { sql, estado } = banco();
   const cookie = await comSessao();
 
   const marcar = await tratar(
-    pedir('/atividades/seg-06:00', { metodo: 'PUT', cookie, corpo: { concluida: true } }),
+    pedir('/atividades/2026-10-19/seg-06:00', { metodo: 'PUT', cookie, corpo: { concluida: true } }),
     env,
     sql,
   );
   assert.equal(marcar.status, 200);
-  assert.ok(estado.marcadas.has('seg-06:00'));
+  assert.ok(estado.marcadas.has('2026-10-19|seg-06:00'));
+
+  // Outra data com a mesma atividade: marcações independentes.
+  await tratar(
+    pedir('/atividades/2026-10-26/seg-06:00', { metodo: 'PUT', cookie, corpo: { concluida: true } }),
+    env,
+    sql,
+  );
+  assert.ok(estado.marcadas.has('2026-10-26|seg-06:00'));
 
   const desmarcar = await tratar(
-    pedir('/atividades/seg-06:00', { metodo: 'PUT', cookie, corpo: { concluida: false } }),
+    pedir('/atividades/2026-10-19/seg-06:00', { metodo: 'PUT', cookie, corpo: { concluida: false } }),
     env,
     sql,
   );
   assert.equal(desmarcar.status, 200);
-  assert.equal(estado.marcadas.has('seg-06:00'), false);
+  assert.equal(estado.marcadas.has('2026-10-19|seg-06:00'), false);
+  assert.ok(estado.marcadas.has('2026-10-26|seg-06:00'));
+});
+
+test('data inválida na rota é recusada', async () => {
+  const { sql } = banco();
+  const cookie = await comSessao();
+  for (const data of ['ontem', '2026-13-01', '2026-02-31', '19-10-2026']) {
+    const r = await tratar(
+      pedir(`/atividades/${encodeURIComponent(data)}/seg-06:00`, {
+        metodo: 'PUT',
+        cookie,
+        corpo: { concluida: true },
+      }),
+      env,
+      sql,
+    );
+    assert.equal(r.status, 400, data);
+  }
 });
 
 test('marcas de dois aparelhos se somam (gravação por atividade)', async () => {
   const { sql, estado } = banco();
   const a = await comSessao('sarah');
-  await tratar(pedir('/atividades/seg-06:00', { metodo: 'PUT', cookie: a, corpo: { concluida: true } }), env, sql);
-  await tratar(pedir('/atividades/ter-22:00', { metodo: 'PUT', cookie: a, corpo: { concluida: true } }), env, sql);
-  assert.deepEqual([...estado.marcadas].sort(), ['seg-06:00', 'ter-22:00']);
+  await tratar(
+    pedir('/atividades/2026-10-19/seg-06:00', { metodo: 'PUT', cookie: a, corpo: { concluida: true } }),
+    env,
+    sql,
+  );
+  await tratar(
+    pedir('/atividades/2026-10-19/ter-22:00', { metodo: 'PUT', cookie: a, corpo: { concluida: true } }),
+    env,
+    sql,
+  );
+  assert.deepEqual([...estado.marcadas].sort(), [
+    '2026-10-19|seg-06:00',
+    '2026-10-19|ter-22:00',
+  ]);
 });
 
 test('concluida precisa ser booleano', async () => {
   const { sql } = banco();
   const r = await tratar(
-    pedir('/atividades/seg-06:00', { metodo: 'PUT', cookie: await comSessao(), corpo: { concluida: 'sim' } }),
+    pedir('/atividades/2026-10-21/seg-06:00', {
+      metodo: 'PUT',
+      cookie: await comSessao(),
+      corpo: { concluida: 'sim' },
+    }),
     env,
     sql,
   );
@@ -263,7 +332,11 @@ test('concluida precisa ser booleano', async () => {
 test('id de atividade com barra é recusado', async () => {
   const { sql } = banco();
   const r = await tratar(
-    pedir('/atividades/..%2Fsegredo', { metodo: 'PUT', cookie: await comSessao(), corpo: { concluida: true } }),
+    pedir('/atividades/2026-10-21/..%2Fsegredo', {
+      metodo: 'PUT',
+      cookie: await comSessao(),
+      corpo: { concluida: true },
+    }),
     env,
     sql,
   );
@@ -278,7 +351,7 @@ test('leitor pode ler mas não escrever', async () => {
   assert.equal(leitura.status, 200);
 
   const escrita = await tratar(
-    pedir('/atividades/seg-06:00', { metodo: 'PUT', cookie, corpo: { concluida: true } }),
+    pedir('/atividades/2026-10-21/seg-06:00', { metodo: 'PUT', cookie, corpo: { concluida: true } }),
     env,
     sql,
   );
@@ -288,7 +361,7 @@ test('leitor pode ler mas não escrever', async () => {
 test('token de serviço escreve sem cookie (sincronização)', async () => {
   const { sql, estado } = banco();
   const r = await tratar(
-    new Request('https://api.test/atividades/seg-06:00', {
+    new Request('https://api.test/atividades/2026-10-21/seg-06:00', {
       method: 'PUT',
       headers: { 'content-type': 'application/json', authorization: 'Bearer token-servico' },
       body: JSON.stringify({ concluida: true }),
@@ -297,12 +370,31 @@ test('token de serviço escreve sem cookie (sincronização)', async () => {
     sql,
   );
   assert.equal(r.status, 200);
-  assert.ok(estado.marcadas.has('seg-06:00'));
+  assert.ok(estado.marcadas.has('2026-10-21|seg-06:00'));
 });
 
-test('DELETE /atividades limpa a semana', async () => {
+test('DELETE /atividades?inicio= limpa só aquela semana', async () => {
   const { sql, estado } = banco();
-  estado.marcadas.add('seg-06:00');
+  estado.marcadas.add('2026-10-12|seg-06:00');
+  estado.marcadas.add('2026-10-19|seg-06:00');
+  estado.marcadas.add('2026-10-25|dom-22:00');
+  estado.marcadas.add('2026-10-26|seg-06:00');
+
+  const r = await tratar(
+    pedir('/atividades?inicio=2026-10-19', { metodo: 'DELETE', cookie: await comSessao() }),
+    env,
+    sql,
+  );
+  assert.equal(r.status, 200);
+  assert.deepEqual([...estado.marcadas].sort(), [
+    '2026-10-12|seg-06:00',
+    '2026-10-26|seg-06:00',
+  ]);
+});
+
+test('DELETE /atividades sem início limpa tudo', async () => {
+  const { sql, estado } = banco();
+  estado.marcadas.add('2026-10-19|seg-06:00');
   const r = await tratar(pedir('/atividades', { metodo: 'DELETE', cookie: await comSessao() }), env, sql);
   assert.equal(r.status, 200);
   assert.equal(estado.marcadas.size, 0);
@@ -325,14 +417,17 @@ test('cômodo é gravado e removido', async () => {
 
 test('PUT /semana substitui o estado (importação)', async () => {
   const { sql, estado } = banco();
-  estado.marcadas.add('antiga-00:00');
+  estado.marcadas.add('2026-10-12|antiga-00:00');
 
   const r = await tratar(
     pedir('/semana', {
       metodo: 'PUT',
       cookie: await comSessao(),
       corpo: {
-        marcadas: ['qua-09:00', 'dom-22:00'],
+        concluidas: {
+          '2026-10-21': ['qua-09:00'],
+          '2026-10-25': ['dom-22:00'],
+        },
         comodos: [{ id: 'sala', nome: 'Sala', concluido: true }],
       },
     }),
@@ -340,8 +435,22 @@ test('PUT /semana substitui o estado (importação)', async () => {
     sql,
   );
   assert.equal(r.status, 200);
-  assert.deepEqual([...estado.marcadas].sort(), ['dom-22:00', 'qua-09:00']);
+  assert.deepEqual([...estado.marcadas].sort(), ['2026-10-21|qua-09:00', '2026-10-25|dom-22:00']);
   assert.equal(estado.comodos.get('sala').concluido, true);
+});
+
+test('PUT /semana recusa data inválida em concluidas', async () => {
+  const { sql } = banco();
+  const r = await tratar(
+    pedir('/semana', {
+      metodo: 'PUT',
+      cookie: await comSessao(),
+      corpo: { concluidas: { '2026-02-31': ['qua-09:00'] }, comodos: [] },
+    }),
+    env,
+    sql,
+  );
+  assert.equal(r.status, 400);
 });
 
 test('corpo que não é JSON responde 400, não 500', async () => {
@@ -426,7 +535,7 @@ test('PUT /dias/:dia/atividades/:id cria a atividade e GET devolve o plano', asy
   assert.equal((await r.json()).atividade.duracaoMinutos, 210);
 
   const semana = await (await tratar(pedir('/semana', { cookie }), env, sql)).json();
-  assert.equal(semana.versao, 3);
+  assert.equal(semana.versao, 4);
   assert.deepEqual(semana.dias.map((d) => d.chave), ['qua']);
   const atividade = semana.dias[0].atividades[0];
   assert.equal(atividade.titulo, 'Reorganização');
@@ -448,7 +557,7 @@ test('editar horário e duração mantém o id (e a marcação)', async () => {
     sql,
   );
   await tratar(
-    pedir('/atividades/seg-06:00', { metodo: 'PUT', cookie, corpo: { concluida: true } }),
+    pedir('/atividades/2026-10-19/seg-06:00', { metodo: 'PUT', cookie, corpo: { concluida: true } }),
     env,
     sql,
   );
@@ -466,7 +575,7 @@ test('editar horário e duração mantém o id (e a marcação)', async () => {
   const atividade = semana.dias[0].atividades[0];
   assert.equal(atividade.horario, '05:45');
   assert.equal(atividade.duracaoMinutos, 10);
-  assert.deepEqual(semana.marcadas, ['seg-06:00']);
+  assert.deepEqual(semana.concluidas['2026-10-19'], ['seg-06:00']);
 });
 
 test('DELETE da atividade também remove a marcação', async () => {
@@ -482,13 +591,17 @@ test('DELETE da atividade também remove a marcação', async () => {
     env,
     sql,
   );
-  await tratar(pedir('/atividades/ter-11:00', { metodo: 'PUT', cookie, corpo: { concluida: true } }), env, sql);
-  assert.ok(estado.marcadas.has('ter-11:00'));
+  await tratar(
+    pedir('/atividades/2026-10-20/ter-11:00', { metodo: 'PUT', cookie, corpo: { concluida: true } }),
+    env,
+    sql,
+  );
+  assert.ok(estado.marcadas.has('2026-10-20|ter-11:00'));
 
   const r = await tratar(pedir('/dias/ter/atividades/ter-11:00', { metodo: 'DELETE', cookie }), env, sql);
   assert.equal(r.status, 200);
   assert.equal(estado.atividades.size, 0);
-  assert.equal(estado.marcadas.has('ter-11:00'), false);
+  assert.equal(estado.marcadas.has('2026-10-20|ter-11:00'), false);
 });
 
 test('atividade inválida é recusada com 400 (dia, horário, categoria, duração)', async () => {
@@ -537,7 +650,7 @@ test('PUT /semana sem dias não apaga o plano existente', async () => {
     pedir('/semana', {
       metodo: 'PUT',
       cookie,
-      corpo: { marcadas: [], comodos: [{ id: 'sala', nome: 'Sala' }] },
+      corpo: { concluidas: {}, comodos: [{ id: 'sala', nome: 'Sala' }] },
     }),
     env,
     sql,
@@ -592,5 +705,5 @@ test('sem plano gravado, GET /semana não manda dias (o app migra)', async () =>
   const { sql } = banco();
   const semana = await (await tratar(pedir('/semana', { cookie: await comSessao() }), env, sql)).json();
   assert.equal(semana.dias, undefined);
-  assert.deepEqual(semana.marcadas, []);
+  assert.deepEqual(semana.concluidas, {});
 });

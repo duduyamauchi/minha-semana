@@ -15,6 +15,9 @@ Future<Repositorio> _montar(WidgetTester tester, {SessaoApi? cliente}) async {
   addTearDown(tester.view.reset);
 
   final rep = Repositorio(FonteMemoria());
+  // Data fixa: a tela é de calendário, e o teste não pode depender do dia em
+  // que roda (a marcação de hoje não existiria numa "quarta" futura).
+  rep.agora = () => DateTime(2026, 10, 21, 9);
   await rep.carregar();
   await tester.pumpWidget(Aplicativo(repositorio: rep, clienteSessao: cliente));
   await tester.pumpAndSettle();
@@ -27,9 +30,9 @@ void main() {
 
     expect(find.text('Minha Semana'), findsOneWidget);
     expect(find.text('0%'), findsOneWidget);
-    final hoje = Semana.indiceDeHoje();
-    expect(find.textContaining('· hoje'), findsOneWidget);
-    expect(hoje, inInclusiveRange(0, 6));
+    // Quarta, 21 de outubro de 2026 (data fixa em `_montar`).
+    expect(find.textContaining('Quarta, 21/10 · hoje'), findsOneWidget);
+    expect(find.textContaining('19 a 25 de outubro'), findsOneWidget);
   });
 
   testWidgets('marcar uma atividade atualiza o checkbox e o percentual', (
@@ -44,7 +47,7 @@ void main() {
     await tester.tap(find.byKey(ValueKey('marcar-$marcada')));
     await tester.pumpAndSettle();
 
-    expect(rep.semana.marcadas, contains(marcada));
+    expect(rep.concluidaNaData(rep.dias[rep.indiceHoje].atividades.first), isTrue);
     // O percentual sobe acima de zero depois da primeira marcação.
     expect(rep.percentual, greaterThan(0));
     expect(find.text('${rep.percentual}%'), findsOneWidget);
@@ -73,7 +76,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(rep.semana.marcadas, isNotEmpty);
+    expect(rep.agenda.feitasNaSemana, greaterThan(0));
 
     await tester.tap(find.text('Começar nova semana'));
     await tester.pumpAndSettle();
@@ -82,7 +85,7 @@ void main() {
     await tester.tap(find.text('Desmarcar'));
     await tester.pumpAndSettle();
 
-    expect(rep.semana.marcadas, isEmpty);
+    expect(rep.agenda.feitasNaSemana, 0);
     expect(find.text('Cancelar'), findsNothing);
   });
 
@@ -100,7 +103,7 @@ void main() {
     await tester.tap(find.text('Cancelar'));
     await tester.pumpAndSettle();
 
-    expect(rep.semana.marcadas, isNotEmpty);
+    expect(rep.agenda.feitasNaSemana, greaterThan(0));
   });
 
   testWidgets('adicionar e remover cômodo', (tester) async {

@@ -10,6 +10,7 @@
 /// template do HTML original é apenas o ponto de partida (`dados_semana.dart`).
 library;
 
+import 'datas.dart';
 import 'horario.dart';
 
 /// Áreas da rotina, com a cor que o template original dava a cada bloco.
@@ -298,42 +299,49 @@ class Dia {
 }
 
 /// O plano semanal do usuário, com o que já foi feito.
+///
+/// Duas dimensões, de propósito:
+///
+/// * [dias] é o **template** da semana (`seg`…`dom`) — a rotina que se repete;
+/// * [concluidas] é o que foi feito **por data** (`2026-10-21` → ids), porque
+///   cada quarta é uma quarta diferente mesmo compartilhando a rotina.
+///
+/// Essa separação é o que permite navegar por semanas com o mesmo plano sem
+/// duplicar atividades: mudar de semana muda o mapa de marcações consultado,
+/// não o template.
 class Semana {
-  const Semana({required this.dias, required this.marcadas, required this.comodos});
+  const Semana({
+    required this.dias,
+    required this.concluidas,
+    required this.comodos,
+  });
 
   final List<Dia> dias;
 
-  /// IDs das atividades concluídas.
-  final Set<String> marcadas;
+  /// IDs das atividades concluídas, **por data** (`yyyy-MM-dd`).
+  ///
+  /// Ler sempre por [concluidasEm]; o mapa direto só existe para serialização.
+  final Map<String, Set<String>> concluidas;
 
   final List<Comodo> comodos;
 
-  /// Total de atividades da semana, base do percentual.
+  /// Total de atividades do template, base do percentual.
   int get totalAtividades => dias.fold(0, (soma, d) => soma + d.atividades.length);
 
-  /// Quantidade de atividades concluídas que ainda existem no plano.
-  int get totalFeitas {
-    var feitas = 0;
-    for (final d in dias) {
-      for (final a in d.atividades) {
-        if (marcadas.contains(a.id)) feitas++;
-      }
-    }
-    return feitas;
+  /// IDs concluídos numa data.
+  Set<String> concluidasEm(DateTime data) => concluidas[Datas.iso(data)] ?? const {};
+
+  /// Quantas atividades do dia [chave] foram feitas na [data].
+  int feitasEm(DateTime data, String chave) {
+    final dia = this.dia(chave);
+    if (dia == null) return 0;
+    final feitas = concluidasEm(data);
+    return dia.atividades.where((a) => feitas.contains(a.id)).length;
   }
 
-  /// Fração de 0 a 1; `0` quando não há atividades.
-  double get progresso {
-    final total = totalAtividades;
-    return total == 0 ? 0 : totalFeitas / total;
-  }
-
-  /// Percentual arredondado, como o `0%` do cabeçalho.
-  int get percentual => (progresso * 100).round();
-
-  int feitasNoDia(Dia dia) => dia.atividades.where((a) => marcadas.contains(a.id)).length;
-
-  bool concluida(Atividade atividade) => marcadas.contains(atividade.id);
+  /// Verdadeiro quando a atividade está marcada naquela data.
+  bool concluidaEm(DateTime data, Atividade atividade) =>
+      concluidasEm(data).contains(atividade.id);
 
   bool comodoConcluido(Comodo comodo) => comodo.concluido;
 
@@ -345,30 +353,32 @@ class Semana {
   }
 
   /// Índice do dia de hoje (segunda = 0, domingo = 6).
-  static int indiceDeHoje([DateTime? agora]) {
-    final hoje = agora ?? DateTime.now();
-    return (hoje.weekday - DateTime.monday) % 7;
-  }
+  static int indiceDeHoje([DateTime? agora]) =>
+      Datas.indiceNaSemana(agora ?? DateTime.now());
 
-  /// Nome do dia da semana para uma data (segunda = 0).
+  /// Chave do dia da semana para uma data (segunda = 0).
   static String chaveDe([DateTime? agora]) => Dia.chavesValidas[indiceDeHoje(agora)];
 
+  /// Chave do dia de uma data específica.
+  static String chaveDaData(DateTime data) => Dia.chavesValidas[Datas.indiceNaSemana(data)];
+
   // ---------------------------------------------------------------------------
-  // Edição do plano
+  // Edição do plano (template)
   //
-  // Todas devolvem uma nova `Semana`: quem chama decide quando publicar. As
-  // marcações acompanham a atividade, e são removidas junto com ela para não
-  // inflar o percentual com ids órfãos.
+  // Todas devolvem uma nova `Semana`: quem chama decide quando publicar.
   // ---------------------------------------------------------------------------
 
   /// Id livre para uma atividade nova naquele dia e horário.
   ///
   /// Preferir `dia-HH:mm` mantém os ids legíveis; quando já existe, ganha um
-  /// sufixo numérico. Nunca reaproveita id de outra atividade.
+  /// sufixo numérico. Nunca reaproveita id de outra atividade — nem de uma
+  /// marcação antiga, que voltaria a parecer concluída.
   String idLivre(String chaveDia, String horario) {
-    final alvo = dia(chaveDia);
-    final existentes = {for (final a in alvo?.atividades ?? const <Atividade>[]) a.id}
-      ..addAll(marcadas);
+    final existentes = {
+      for (final d in dias)
+        for (final a in d.atividades) a.id,
+      for (final ids in concluidas.values) ...ids,
+    };
     final base = Atividade.chavear(chaveDia, horario);
     if (!existentes.contains(base)) return base;
     for (var i = 2; i < 1000; i++) {
@@ -413,11 +423,17 @@ class Semana {
         ? [for (final a in alvo.atividades) if (a.id == atividade.id) atividade else a]
         : [...alvo.atividades, atividade];
     return copiarCom(
-      dias: [for (final d in dias) if (d.chave == chave) d.copiarCom(atividades: atividades) else d],
+      dias: [
+        for (final d in dias)
+          if (d.chave == chave) d.copiarCom(atividades: atividades) else d,
+      ],
     );
   }
 
-  /// Remove uma atividade e a marcação associada.
+  /// Remove uma atividade do template e todas as marcações dela.
+  ///
+  /// A marcação órfã inflaria o percentual de semanas passadas com um id que
+  /// não existe mais, então sai junto.
   Semana removerAtividade(String chaveDia, String id) {
     final alvo = dia(chaveDia);
     if (alvo == null || !alvo.atividades.any((a) => a.id == id)) return this;
@@ -429,74 +445,223 @@ class Semana {
           else
             d,
       ],
-      marcadas: {...marcadas}..remove(id),
+      concluidas: {
+        for (final e in concluidas.entries)
+          if (e.value.contains(id)) e.key: {...e.value}..remove(id) else e.key: e.value,
+      },
     );
   }
 
-  Semana copiarCom({List<Dia>? dias, Set<String>? marcadas, List<Comodo>? comodos}) => Semana(
+  // ---------------------------------------------------------------------------
+  // Marcações por data
+  // ---------------------------------------------------------------------------
+
+  /// Marca ou desmarca uma atividade numa data.
+  Semana definirConcluida(DateTime data, String id, {required bool concluida}) {
+    final chave = Datas.iso(data);
+    final atual = Set<String>.of(concluidasEm(data));
+    if (concluida) {
+      atual.add(id);
+    } else {
+      atual.remove(id);
+    }
+    final mapa = {
+      for (final e in concluidas.entries)
+        if (e.key != chave) e.key: e.value,
+      if (atual.isNotEmpty) chave: atual,
+    };
+    return copiarCom(concluidas: mapa);
+  }
+
+  /// Desmarca a semana inteira de [inicio] a [fim] (datas inclusivas).
+  Semana limparIntervalo(DateTime inicio, {int dias = 7}) {
+    final alvo = {
+      for (var i = 0; i < dias; i++) Datas.iso(Datas.somarDias(inicio, i)),
+    };
+    return copiarCom(
+      concluidas: {
+        for (final e in concluidas.entries)
+          if (!alvo.contains(e.key)) e.key: e.value,
+      },
+    );
+  }
+
+  Semana copiarCom({
+    List<Dia>? dias,
+    Map<String, Set<String>>? concluidas,
+    List<Comodo>? comodos,
+  }) => Semana(
     dias: dias ?? this.dias,
-    marcadas: marcadas ?? this.marcadas,
+    concluidas: concluidas ?? this.concluidas,
     comodos: comodos ?? this.comodos,
   );
 
-  /// Esta semana com outro estado, mantendo o plano.
-  Semana comEstado(EstadoSemana novo) =>
-      Semana(dias: novo.dias ?? dias, marcadas: novo.marcadas, comodos: novo.comodos);
+  /// Esta semana com outro estado, mantendo o template.
+  Semana comEstado(EstadoSemana novo) => Semana(
+    dias: novo.dias ?? dias,
+    concluidas: novo.concluidas,
+    comodos: novo.comodos,
+  );
 
-  /// O que efetivamente se persiste: o plano, as marcações e os cômodos.
+  /// O que efetivamente se persiste: o template, as marcações e os cômodos.
   EstadoSemana get estado =>
-      EstadoSemana(dias: dias, marcadas: marcadas, comodos: comodos);
+      EstadoSemana(dias: dias, concluidas: concluidas, comodos: comodos);
 
   Map<String, dynamic> toJson() => estado.toJson();
 
-  /// Reconstrói a semana a partir do JSON.
+  /// Reconstrói o plano a partir do JSON.
   ///
-  /// Sem plano no estado (formato v2, gravado antes da edição existir), usa o
-  /// template do HTML como ponto de partida — é a migração do que já estava
-  /// salvo no aparelho ou no banco.
+  /// Sem template no estado (formatos v2/v3), usa o do app como ponto de
+  /// partida — é a migração do que já estava salvo no aparelho ou no banco.
   factory Semana.doJson(Map<String, dynamic> j, {required List<Dia> base}) {
     final estado = EstadoSemana.fromJson(j);
     return Semana(
       dias: estado.dias ?? base,
-      marcadas: estado.marcadas,
+      concluidas: estado.concluidas,
       comodos: estado.comodos,
     );
   }
 }
 
-/// Fotografia persistida da semana: o plano e o que já foi feito.
-class EstadoSemana {
-  const EstadoSemana({required this.marcadas, required this.comodos, this.dias});
+/// A semana de uma data, pronta para a tela.
+///
+/// Cruza o template com as marcações daquela semana. Nada é copiado: os dias
+/// apontam para o mesmo template, então editar uma atividade vale para todas as
+/// semanas, sem "propagar" nada.
+class Agenda {
+  const Agenda({
+    required this.semana,
+    required this.inicio,
+    required this.selecionado,
+  });
 
-  final Set<String> marcadas;
+  final Semana semana;
+
+  /// Segunda-feira da semana.
+  final DateTime inicio;
+
+  /// Data aberta na timeline (sempre dentro da semana).
+  final DateTime selecionado;
+
+  List<DateTime> get datas => [for (var i = 0; i < 7; i++) Datas.somarDias(inicio, i)];
+
+  DateTime get fim => Datas.somarDias(inicio, 6);
+
+  /// Dia do template correspondente à data.
+  Dia diaDaData(DateTime data) {
+    final chave = Semana.chaveDaData(data);
+    return semana.dia(chave) ??
+        Dia(chave: chave, nome: Dia.nomeDe(chave), nota: Dia.notaDe(chave), atividades: const []);
+  }
+
+  String chaveDoSelecionado() => Semana.chaveDaData(selecionado);
+
+  Dia get diaSelecionado => diaDaData(selecionado);
+
+  int totalEm(DateTime data) => diaDaData(data).atividades.length;
+
+  int feitasEm(DateTime data) => semana.feitasEm(data, Semana.chaveDaData(data));
+
+  /// Fração feita na data (0..1).
+  double progressoEm(DateTime data) {
+    final total = totalEm(data);
+    return total == 0 ? 0 : feitasEm(data) / total;
+  }
+
+  /// Percentual da data, arredondado.
+  int percentualEm(DateTime data) => (progressoEm(data) * 100).round();
+
+  int get totalDaSemana => datas.fold(0, (s, d) => s + totalEm(d));
+
+  int get feitasNaSemana => datas.fold(0, (s, d) => s + feitasEm(d));
+
+  double get progressoDaSemana {
+    final total = totalDaSemana;
+    return total == 0 ? 0 : feitasNaSemana / total;
+  }
+
+  int get percentualDaSemana => (progressoDaSemana * 100).round();
+
+  /// Número da semana ISO (para exibir "semana 43").
+  int get numeroDaSemana {
+    // ISO-8601: a semana 1 é a que contém a primeira quinta-feira do ano.
+    final quinta = Datas.somarDias(inicio, 3);
+    final primeiroDia = DateTime(quinta.year, 1, 1);
+    final dias = quinta.difference(primeiroDia).inDays;
+    return (dias / 7).floor() + 1;
+  }
+
+  /// Cópia com outro dia selecionado (dentro ou fora da semana).
+  Agenda comSelecionado(DateTime data) {
+    final d = Datas.dia(data);
+    return Agenda(
+      semana: semana,
+      inicio: Datas.segundaDe(d),
+      selecionado: d,
+    );
+  }
+
+  static Agenda de(Semana semana, DateTime data) {
+    final d = Datas.dia(data);
+    return Agenda(semana: semana, inicio: Datas.segundaDe(d), selecionado: d);
+  }
+}
+
+/// Fotografia persistida: template, marcações por data e cômodos.
+class EstadoSemana {
+  const EstadoSemana({
+    required this.concluidas,
+    required this.comodos,
+    this.dias,
+  });
+
+  /// Data (`yyyy-MM-dd`) → ids concluídos naquele dia.
+  final Map<String, Set<String>> concluidas;
+
   final List<Comodo> comodos;
 
-  /// Plano do usuário. `null` significa "use o template do app" — o formato
-  /// v2 não guardava o plano, e é assim que a migração acontece.
+  /// Template do usuário. `null` significa "use o do app".
   final List<Dia>? dias;
 
   /// Versão do formato gravado.
   ///
-  /// v2: marcações e cômodos. v3: acrescenta o plano editável.
-  static const versaoFormato = 3;
+  /// v2: marcações sem data e cômodos. v3: acrescenta o template.
+  /// v4: marcações **por data** — é o que permite semanas no calendário.
+  static const versaoFormato = 4;
 
-  EstadoSemana comPlano(List<Dia> plano) =>
-      EstadoSemana(marcadas: marcadas, comodos: comodos, dias: plano);
+  EstadoSemana comTemplate(List<Dia> plano) =>
+      EstadoSemana(concluidas: concluidas, comodos: comodos, dias: plano);
 
   Map<String, dynamic> toJson() => {
     'versao': versaoFormato,
-    'marcadas': marcadas.toList()..sort(),
+    'concluidas': {
+      for (final chave in concluidas.keys.toList()..sort())
+        if (concluidas[chave]!.isNotEmpty) chave: concluidas[chave]!.toList()..sort(),
+    },
     'comodos': [for (final c in comodos) c.toJson()],
     if (dias != null) 'dias': [for (final d in dias!) d.toJson()],
   };
 
   /// Campos ausentes ou inválidos não quebram a leitura: entradas ruins são
-  /// descartadas, o resto da semana continua válido.
+  /// descartadas, o resto do estado continua válido.
   factory EstadoSemana.fromJson(Map<String, dynamic> j) {
-    final marcadas = <String>{
-      for (final m in (j['marcadas'] as List? ?? const []))
-        if (m is String && m.isNotEmpty) m,
-    };
+    final concluidas = <String, Set<String>>{};
+    final bruto = j['concluidas'];
+    if (bruto is Map) {
+      for (final e in bruto.entries) {
+        final data = Datas.deIso(e.key.toString());
+        if (data == null) continue;
+        final ids = {
+          for (final id in (e.value is List ? e.value as List : const []))
+            if (id is String && id.isNotEmpty) id,
+        };
+        if (ids.isNotEmpty) concluidas[Datas.iso(data)] = ids;
+      }
+    }
+
+    // Formato antigo: `marcadas` era uma lista sem data. Ela não pode ser
+    // atribuída a nenhum dia sem inventar informação, então é descartada — as
+    // semanas começam zeradas e o template é preservado.
     final comodos = <Comodo>[];
     final vistos = <String>{};
     for (final c in (j['comodos'] as List? ?? const [])) {
@@ -517,18 +682,18 @@ class EstadoSemana {
         if (!Dia.chaveValida(dia.chave) || !chaves.add(dia.chave)) continue;
         lidos.add(dia);
       }
-      // Um plano sem nenhum dia válido não serve: cai no template.
       if (lidos.isNotEmpty) plano = lidos;
     }
 
     return EstadoSemana(
-      marcadas: marcadas,
+      concluidas: concluidas,
       comodos: comodos.isEmpty ? comodosPadrao() : comodos,
       dias: plano,
     );
   }
 
-  static EstadoSemana inicial() => EstadoSemana(marcadas: const {}, comodos: comodosPadrao());
+  static EstadoSemana inicial() =>
+      EstadoSemana(concluidas: const {}, comodos: comodosPadrao());
 }
 
 /// Um cômodo (ou categoria) da reorganização da casa.

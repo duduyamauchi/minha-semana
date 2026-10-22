@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:planner_core/planner_core.dart';
 import 'package:planner_ui/planner_ui.dart';
@@ -143,6 +144,11 @@ class _AplicativoState extends State<Aplicativo> {
         child: MaterialApp.router(
           title: 'Minha Semana',
           debugShowCheckedModeBanner: false,
+          // Português no seletor de data e nos textos de acessibilidade do
+          // Material: sem isso o `showDatePicker` abre em inglês.
+          locale: const Locale('pt', 'BR'),
+          supportedLocales: const [Locale('pt', 'BR'), Locale('en', 'US')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           theme: Tema.claro(),
           darkTheme: Tema.escuro(),
           themeMode: ThemeMode.system,

@@ -211,14 +211,41 @@ const DIAS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];
 /// Categorias aceitas (as mesmas do app).
 const CATEGORIAS = ['estudo', 'movimento', 'casa', 'bemEstar'];
 
+/** `Date` do driver → `yyyy-MM-dd`, no fuso do banco (a coluna é `date`). */
+function paraIsoData(valor) {
+  if (typeof valor === 'string') return valor.slice(0, 10);
+  const d = valor instanceof Date ? valor : new Date(valor);
+  // `toISOString` usa UTC: numa coluna `date` lida como meia-noite UTC, o dia
+  // já é o certo; formatar à mão evita depender disso.
+  return d.toISOString().slice(0, 10);
+}
+
+/** Valida `yyyy-MM-dd` como data real. */
+function dataCalendario(valor, campo) {
+  const s = texto(valor, campo, { max: 10, obrigatorio: true });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    throw new ErroValidacao(`Campo ${campo} deve estar no formato AAAA-MM-DD.`);
+  }
+  const [ano, mes, dia] = s.split('-').map(Number);
+  const d = new Date(Date.UTC(ano, mes - 1, dia));
+  if (d.getUTCFullYear() !== ano || d.getUTCMonth() !== mes - 1 || d.getUTCDate() !== dia) {
+    throw new ErroValidacao(`Campo ${campo} não é uma data válida.`);
+  }
+  return s;
+}
+
 /**
- * Lê o estado da semana: plano, marcações e cômodos de um quadro.
+ * Lê o estado: template, marcações **por data** e cômodos de um quadro.
  *
  * Três consultas em paralelo, não N+1: o volume é pequeno (uma linha por
- * atividade do plano, uma por marcada) e o Worker tem limite de subrequests.
+ * atividade do template, uma por marcação) e o Worker tem limite de
+ * subrequests.
  *
- * `dias` só aparece quando há plano gravado. O app usa a ausência para migrar:
- * estados antigos (v2) eram só marcações, e o template vinha compilado.
+ * `concluidas` é `{ "2026-10-21": ["qua-06:00", …] }`. A versão 4 do formato
+ * trouxe a data: antes uma marcação valia para todas as semanas.
+ *
+ * `dias` só aparece quando há template gravado. O app usa a ausência para
+ * migrar: estados antigos (v2) não tinham plano.
  */
 async function lerSemana(sql, quadroId) {
   const [atividades, marcadas, comodos] = await Promise.all([
@@ -227,7 +254,11 @@ async function lerSemana(sql, quadroId) {
       from atividades where quadro_id = ${quadroId}
       order by dia, horario, id
     `,
-    sql`select atividade_id from atividades_concluidas where quadro_id = ${quadroId} order by atividade_id`,
+    sql`
+      select data, atividade_id from atividades_concluidas
+      where quadro_id = ${quadroId}
+      order by data, atividade_id
+    `,
     sql`select id, nome, concluido from comodos where quadro_id = ${quadroId} order by ordem, nome`,
   ]);
 
@@ -248,9 +279,16 @@ async function lerSemana(sql, quadroId) {
     });
   }
 
+  // Agrupa por data no servidor: o app espera um mapa, não uma lista.
+  const concluidas = {};
+  for (const linha of marcadas) {
+    const chave = paraIsoData(linha.data);
+    (concluidas[chave] ??= []).push(linha.atividade_id);
+  }
+
   const corpo = {
-    versao: 3,
-    marcadas: marcadas.map((l) => l.atividade_id),
+    versao: 4,
+    concluidas,
     comodos: comodos.map((c) => ({ id: c.id, nome: c.nome, concluido: c.concluido })),
   };
   // Plano vazio é ausência válida (a pessoa apagou tudo?) — mas o app só migra
@@ -317,13 +355,13 @@ async function gravarSemana(sql, quadroId, estado) {
     await sql`delete from atividades where quadro_id = ${quadroId}`;
   }
 
-  const marcadas = estado.marcadas;
-  if (marcadas.length) {
-    // Uma instrução para todas as linhas: inserir em laço estoura o limite de
-    // subrequests do Worker com uma semana cheia.
+  // Marcações: uma instrução para todas as linhas. `datas` e `ids` vêm em
+  // paralelo, um par por marcação.
+  if (estado.datas.length) {
     await sql`
-      insert into atividades_concluidas (quadro_id, atividade_id)
-      select ${quadroId}, unnest(${marcadas}::text[])
+      insert into atividades_concluidas (quadro_id, data, atividade_id)
+      select ${quadroId}, data, atividade_id
+      from unnest(${estado.datas}::date[], ${estado.ids}::text[]) as t(data, atividade_id)
       on conflict do nothing
     `;
   }
@@ -575,7 +613,19 @@ export async function tratar(request, env, sql) {
         if (request.method === 'PUT') {
           if (!podeEscrever) return recusarEscrita();
           const corpo = await lerJson(request);
-          const marcadas = listaDe(corpo.marcadas, 'marcadas').map((m) => identificador(m, 'marcada'));
+          // Marcações por data: `{ "2026-10-21": ["qua-06:00"] }`.
+          // `marcadas` (formato v3) é aceito e descartado — sem data não há
+          // como atribuir a uma semana sem inventar.
+          const datas = [];
+          const ids = [];
+          const concluidas = objeto(corpo.concluidas, 'concluidas');
+          for (const [chave, lista] of Object.entries(concluidas)) {
+            const data = dataCalendario(chave, 'concluidas');
+            for (const id of listaDe(lista, 'concluidas')) {
+              datas.push(data);
+              ids.push(identificador(id, 'marcada'));
+            }
+          }
           const comodos = listaDe(corpo.comodos, 'comodos').map((c) => normalizarComodo(c));
           // Plano é opcional na carga: ausente significa "não mexe no plano".
           // É assim que um backup v2 (sem dias) continua válido.
@@ -589,7 +639,8 @@ export async function tratar(request, env, sql) {
             }
           }
           await gravarSemana(sql, acesso.quadroId, {
-            marcadas,
+            datas,
+            ids,
             comodos,
             atividades,
             substituirPlano: Array.isArray(corpo.dias),
@@ -621,7 +672,8 @@ export async function tratar(request, env, sql) {
           // A marcação não pode sobreviver à atividade removida: senão o
           // percentual contaria um id que não existe mais.
           await sql`
-            delete from atividades_concluidas where quadro_id = ${acesso.quadroId} and atividade_id = ${id}
+            delete from atividades_concluidas
+            where quadro_id = ${acesso.quadroId} and atividade_id = ${id}
           `;
           return responder({ ok: true, id });
         }
@@ -629,34 +681,49 @@ export async function tratar(request, env, sql) {
         return erro('Método não permitido em /dias/:dia/atividades.', 405, { cabecalhos: base });
       }
 
-      // PUT /atividades/:id — marca/desmarca uma atividade
-      if (partes[0] === 'atividades' && partes[1] && request.method === 'PUT') {
+      // PUT /atividades/:data/:id — marca/desmarca numa data.
+      //
+      // A data faz parte da rota: a mesma atividade existe em todas as semanas,
+      // e marcar a quarta não pode marcar todas as quartas.
+      if (partes[0] === 'atividades' && partes[1] && partes[2] && request.method === 'PUT') {
         if (!podeEscrever) return recusarEscrita();
-        const id = identificador(decodeURIComponent(partes[1]), 'id');
+        const data = dataCalendario(decodeURIComponent(partes[1]), 'data');
+        const id = identificador(decodeURIComponent(partes[2]), 'id');
         const corpo = await lerJson(request);
         if (typeof corpo.concluida !== 'boolean') {
           throw new ErroValidacao('Campo concluida deve ser booleano.');
         }
         if (corpo.concluida) {
           await sql`
-            insert into atividades_concluidas (quadro_id, atividade_id)
-            values (${acesso.quadroId}, ${id})
+            insert into atividades_concluidas (quadro_id, data, atividade_id)
+            values (${acesso.quadroId}, ${data}::date, ${id})
             on conflict do nothing
           `;
         } else {
           await sql`
             delete from atividades_concluidas
-            where quadro_id = ${acesso.quadroId} and atividade_id = ${id}
+            where quadro_id = ${acesso.quadroId} and data = ${data}::date and atividade_id = ${id}
           `;
         }
-        return responder({ ok: true, id, concluida: corpo.concluida });
+        return responder({ ok: true, data, id, concluida: corpo.concluida });
       }
 
-      // DELETE /atividades — desmarca a semana inteira
+      // DELETE /atividades?inicio=AAAA-MM-DD — desmarca a semana (segunda
+      // informada, sete dias) ou, sem o parâmetro, tudo.
       if (partes[0] === 'atividades' && !partes[1] && request.method === 'DELETE') {
         if (!podeEscrever) return recusarEscrita();
-        await sql`delete from atividades_concluidas where quadro_id = ${acesso.quadroId}`;
-        return responder({ ok: true });
+        const inicio = url.searchParams.get('inicio');
+        if (inicio == null || inicio === '') {
+          await sql`delete from atividades_concluidas where quadro_id = ${acesso.quadroId}`;
+          return responder({ ok: true, escopo: 'tudo' });
+        }
+        const data = dataCalendario(inicio, 'inicio');
+        await sql`
+          delete from atividades_concluidas
+          where quadro_id = ${acesso.quadroId}
+            and data between ${data}::date and (${data}::date + interval '6 days')
+        `;
+        return responder({ ok: true, escopo: 'semana', inicio: data });
       }
 
       // PUT /comodos/:id e DELETE /comodos/:id

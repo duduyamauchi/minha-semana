@@ -9,28 +9,37 @@ import '../widgets/editor_atividade.dart';
 import '../widgets/linha_atividade.dart';
 import '../widgets/secao_comodos.dart';
 
-/// A tela do planejador: uma coluna calma, sete abas, a timeline do dia e a
-/// reorganização da casa.
+/// A tela do planejador: a semana de uma data, com sete abas, a timeline do dia
+/// aberto e a reorganização da casa.
 ///
-/// A composição segue o HTML original — cabeçalho com progresso da semana,
-/// legenda das categorias, abas, timeline e a caixa de cômodos —, mas o estado
-/// chega pelo [Repositorio]: a tela nunca fala com a fonte de dados.
+/// A semântica é de calendário: o plano (template) é o mesmo em todas as
+/// semanas, mas as marcações são da **data**. Navegar por semanas ou escolher
+/// uma data no seletor muda o que está marcado, não a rotina.
 class TelaSemana extends StatefulWidget {
   const TelaSemana({
     super.key,
     required this.repositorio,
-    this.abaInicial,
+    this.dataInicial,
     this.aoAbrirAjustes,
+    this.aoAbrirCalendario,
+    this.aoMudarData,
     this.usuario,
     this.aoSair,
   });
 
   final Repositorio repositorio;
 
-  /// Rota `/dia/:chave` fixa o dia aberto; sem ela, abre no dia de hoje.
-  final String? abaInicial;
+  /// Data aberta (`/semana/2026-10-21` ou `/dia/qua`); sem ela, hoje.
+  final DateTime? dataInicial;
 
   final VoidCallback? aoAbrirAjustes;
+
+  /// Abre a visão de calendário do mês.
+  final VoidCallback? aoAbrirCalendario;
+
+  /// Chamado quando a data muda, para a rota acompanhar
+  /// (`/semana/AAAA-MM-DD`). Sem isto, recarregar a página perderia a semana.
+  final void Function(DateTime data)? aoMudarData;
 
   /// Nome de quem entrou, quando há conta.
   final String? usuario;
@@ -43,15 +52,24 @@ class TelaSemana extends StatefulWidget {
 }
 
 class _TelaSemanaState extends State<TelaSemana> {
-  late int _dia;
   bool _confirmandoReset = false;
+
+  Repositorio get _rep => widget.repositorio;
 
   @override
   void initState() {
     super.initState();
-    _dia = _diaInicial();
-    widget.repositorio.addListener(_aoMudar);
-    widget.repositorio.analytics.visitar('/semana');
+    // A rota manda: `/semana/2026-10-21` abre aquela semana; `/dia/qua` abre a
+    // primeira quarta da semana de hoje. O `irPara` notifica ouvintes, então
+    // não pode rodar durante o build do primeiro frame.
+    final inicial = widget.dataInicial;
+    if (inicial != null && !Datas.mesmoDia(inicial, _rep.selecionado)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _rep.irPara(inicial);
+      });
+    }
+    _rep.addListener(_aoMudar);
+    _rep.analytics.visitar('/semana');
   }
 
   @override
@@ -61,11 +79,17 @@ class _TelaSemanaState extends State<TelaSemana> {
       antigo.repositorio.removeListener(_aoMudar);
       widget.repositorio.addListener(_aoMudar);
     }
+    final nova = widget.dataInicial;
+    if (nova != null && !Datas.mesmoDia(nova, _rep.selecionado)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _rep.irPara(nova);
+      });
+    }
   }
 
   @override
   void dispose() {
-    widget.repositorio.removeListener(_aoMudar);
+    _rep.removeListener(_aoMudar);
     super.dispose();
   }
 
@@ -73,18 +97,54 @@ class _TelaSemanaState extends State<TelaSemana> {
     if (mounted) setState(() {});
   }
 
-  int _diaInicial() {
-    final chave = widget.abaInicial;
-    if (chave != null) {
-      final i = widget.repositorio.dias.indexWhere((d) => d.chave == chave);
-      if (i >= 0) return i;
-    }
-    return widget.repositorio.indiceHoje;
+  /// Move a data aberta e avisa o roteador.
+  void _irPara(DateTime data) {
+    if (Datas.mesmoDia(data, _rep.selecionado)) return;
+    _rep.irPara(data);
+    widget.aoMudarData?.call(_rep.selecionado);
+    _rep.analytics.registrar(
+      'dia_visualizado',
+      propriedades: {
+        'data': Datas.iso(_rep.selecionado),
+        'dia': Semana.chaveDaData(_rep.selecionado),
+        'hoje': Datas.mesmoDia(_rep.selecionado, Datas.hoje(_rep.agora())),
+      },
+      entidade: 'dia',
+      entidadeId: Datas.iso(_rep.selecionado),
+    );
+  }
+
+  void _moverSemana(int semanas) {
+    _rep.moverSemana(semanas);
+    widget.aoMudarData?.call(_rep.selecionado);
+    _rep.analytics.registrar(
+      'semana_navegada',
+      propriedades: {'semanas': semanas, 'data': Datas.iso(_rep.selecionado)},
+    );
+  }
+
+  /// Abre o seletor de data do Material, em português.
+  Future<void> _escolherData() async {
+    final rep = _rep;
+    final escolhida = await showDatePicker(
+      context: context,
+      initialDate: rep.selecionado,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      helpText: 'Escolher dia',
+      cancelText: 'Cancelar',
+      confirmText: 'Abrir',
+      fieldLabelText: 'Data',
+      fieldHintText: 'dd/mm/aaaa',
+      // A data pedida pode cair em qualquer semana: `_irPara` troca a semana.
+    );
+    if (escolhida == null || !mounted) return;
+    _irPara(escolhida);
   }
 
   @override
   Widget build(BuildContext context) {
-    final rep = widget.repositorio;
+    final rep = _rep;
     final paleta = EscopoUi.de(context);
     final largura = MediaQuery.sizeOf(context).width;
     final estreito = largura < 440;
@@ -99,12 +159,9 @@ class _TelaSemanaState extends State<TelaSemana> {
       );
     }
 
-    final indiceHoje = rep.indiceHoje;
-    // O dia selecionado pode ter saído do template (mudança de versão); nesse
-    // caso volta para hoje em vez de abrir uma lista vazia.
-    final selecionado = _dia < rep.dias.length ? _dia : indiceHoje;
-    final dia = rep.dias[selecionado];
-    final feitas = [for (final d in rep.dias) rep.semana.feitasNoDia(d)];
+    final hoje = Datas.hoje(rep.agora());
+    final agenda = rep.agenda;
+    final diaAberto = agenda.diaSelecionado;
 
     return Scaffold(
       body: RefreshIndicator(
@@ -130,6 +187,16 @@ class _TelaSemanaState extends State<TelaSemana> {
                     aoSair: widget.aoSair,
                   ),
                   const SizedBox(height: 16),
+                  _NavegacaoSemana(
+                    agenda: agenda,
+                    hoje: hoje,
+                    aoAnterior: () => _moverSemana(-1),
+                    aoProximo: () => _moverSemana(1),
+                    aoHoje: () => _irPara(hoje),
+                    aoEscolherData: _escolherData,
+                    aoAbrirCalendario: widget.aoAbrirCalendario,
+                  ),
+                  const SizedBox(height: 16),
                   _Legenda(estreito: estreito),
                   const SizedBox(height: 20),
                   if (rep.erro != null) ...[
@@ -137,28 +204,16 @@ class _TelaSemanaState extends State<TelaSemana> {
                     const SizedBox(height: 14),
                   ],
                   AbasDia(
-                    dias: rep.dias,
-                    selecionado: selecionado,
-                    indiceHoje: indiceHoje,
-                    feitas: feitas,
+                    agenda: agenda,
+                    hoje: hoje,
                     estreito: estreito,
-                    onSelecionar: (i) {
-                      setState(() => _dia = i);
-                      rep.analytics.registrar(
-                        'dia_visualizado',
-                        propriedades: {
-                          'dia': rep.dias[i].chave,
-                          'hoje': i == indiceHoje,
-                        },
-                        entidade: 'dia',
-                        entidadeId: rep.dias[i].chave,
-                      );
-                    },
+                    onSelecionar: _irPara,
                   ),
                   const SizedBox(height: 20),
                   _DiaSelecionado(
-                    dia: dia,
-                    hoje: selecionado == indiceHoje,
+                    dia: diaAberto,
+                    data: agenda.selecionado,
+                    hoje: Datas.mesmoDia(agenda.selecionado, hoje),
                     semana: rep.semana,
                     editavel: rep.permiteEscrita,
                     onAlternar: rep.alternar,
@@ -166,7 +221,7 @@ class _TelaSemanaState extends State<TelaSemana> {
                         _abrirEditor(atividade, nova: false),
                     onExcluir: (atividade) => _excluir(atividade),
                     onNova: () =>
-                        _abrirEditor(rep.novaAtividade(dia.chave), nova: true),
+                        _abrirEditor(rep.novaAtividade(diaAberto.chave), nova: true),
                   ),
                   const SizedBox(height: 28),
                   SecaoComodos(
@@ -179,15 +234,18 @@ class _TelaSemanaState extends State<TelaSemana> {
                   const SizedBox(height: 20),
                   _Rodape(
                     confirmando: _confirmandoReset,
+                    semana: agenda,
                     onPedir: () => setState(() => _confirmandoReset = true),
                     onCancelar: () => setState(() => _confirmandoReset = false),
                     onConfirmar: () async {
+                      final inicio = agenda.inicio;
                       await rep.limparMarcacoes();
                       if (mounted) setState(() => _confirmandoReset = false);
                       if (!context.mounted) return;
                       _avisar(
                         context,
-                        'Semana desmarcada. Os cômodos continuam como estavam.',
+                        'Semana de ${Datas.intervaloSemana(inicio)} desmarcada. '
+                        'O plano e os cômodos continuam como estavam.',
                       );
                     },
                   ),
@@ -214,7 +272,7 @@ class _TelaSemanaState extends State<TelaSemana> {
   /// O editor devolve a intenção (salvar/excluir) em vez de gravar sozinho: a
   /// escrita passa pelo repositório, que atualiza a tela, persiste e instrumenta.
   Future<void> _abrirEditor(Atividade atividade, {required bool nova}) async {
-    final rep = widget.repositorio;
+    final rep = _rep;
     final resultado = await abrirEditorAtividade(
       context,
       atividade: atividade,
@@ -248,11 +306,12 @@ class _TelaSemanaState extends State<TelaSemana> {
   /// Excluir pelo menu da linha, com desfazer.
   ///
   /// Diferente do editor (que já pede confirmação), aqui a ação é imediata e o
-  /// desfazer recoloca a atividade com o mesmo id — e, se ela estava concluída,
-  /// a marcação volta junto.
+  /// desfazer recoloca a atividade com o mesmo id — e, se ela estava concluída
+  /// naquele dia, a marcação volta junto.
   Future<void> _excluir(Atividade atividade) async {
-    final rep = widget.repositorio;
-    final estavaFeita = rep.semana.concluida(atividade);
+    final rep = _rep;
+    final data = rep.dataDaAtividade(atividade);
+    final estavaFeita = rep.semana.concluidaEm(data, atividade);
     final ok = await rep.removerAtividade(atividade);
     if (!mounted) return;
     if (!ok) {
@@ -269,7 +328,9 @@ class _TelaSemanaState extends State<TelaSemana> {
             label: 'Desfazer',
             onPressed: () async {
               await rep.salvarAtividade(atividade);
-              if (estavaFeita) await rep.marcar(atividade, concluida: true);
+              if (estavaFeita) {
+                await rep.marcar(atividade, concluida: true, data: data);
+              }
             },
           ),
         ),
@@ -282,6 +343,117 @@ class _TelaSemanaState extends State<TelaSemana> {
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(mensagem)));
+  }
+}
+
+/// Navegação da semana: setas, "hoje", seletor de data e atalho do calendário.
+class _NavegacaoSemana extends StatelessWidget {
+  const _NavegacaoSemana({
+    required this.agenda,
+    required this.hoje,
+    required this.aoAnterior,
+    required this.aoProximo,
+    required this.aoHoje,
+    required this.aoEscolherData,
+    required this.aoAbrirCalendario,
+  });
+
+  final Agenda agenda;
+  final DateTime hoje;
+  final VoidCallback aoAnterior;
+  final VoidCallback aoProximo;
+  final VoidCallback aoHoje;
+  final VoidCallback aoEscolherData;
+  final VoidCallback? aoAbrirCalendario;
+
+  @override
+  Widget build(BuildContext context) {
+    final paleta = EscopoUi.de(context);
+    final estreito = MediaQuery.sizeOf(context).width < 520;
+    final naSemanaAtual = agenda.datas.any((d) => Datas.mesmoDia(d, hoje));
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: paleta.superficie,
+        borderRadius: BorderRadius.circular(paleta.raioMedio),
+        border: Border.all(color: paleta.borda),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: aoAnterior,
+            icon: const Icon(Icons.chevron_left),
+            tooltip: 'Semana anterior',
+            color: paleta.textoSecundario,
+            visualDensity: VisualDensity.compact,
+          ),
+          Expanded(
+            child: InkWell(
+              onTap: aoEscolherData,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      Datas.intervaloSemana(agenda.inicio),
+                      style: TextStyle(
+                        fontSize: estreito ? 14 : 15,
+                        fontWeight: FontWeight.w600,
+                        color: paleta.texto,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      'Semana ${agenda.numeroDaSemana} · ${agenda.percentualDaSemana}%'
+                      '${naSemanaAtual ? ' · esta semana' : ''}',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: paleta.textoSecundario,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: aoHoje,
+            icon: const Icon(Icons.today, size: 16),
+            label: const Text('Hoje'),
+            style: TextButton.styleFrom(
+              foregroundColor: naSemanaAtual ? paleta.textoSecundario : paleta.destaque,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+          IconButton(
+            onPressed: aoEscolherData,
+            icon: const Icon(Icons.calendar_month, size: 20),
+            tooltip: 'Escolher data',
+            color: paleta.textoSecundario,
+            visualDensity: VisualDensity.compact,
+          ),
+          if (aoAbrirCalendario != null)
+            IconButton(
+              onPressed: aoAbrirCalendario,
+              icon: const Icon(Icons.grid_view, size: 19),
+              tooltip: 'Ver calendário',
+              color: paleta.textoSecundario,
+              visualDensity: VisualDensity.compact,
+            ),
+          IconButton(
+            onPressed: aoProximo,
+            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Próxima semana',
+            color: paleta.textoSecundario,
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -425,6 +597,7 @@ class _Legenda extends StatelessWidget {
 class _DiaSelecionado extends StatelessWidget {
   const _DiaSelecionado({
     required this.dia,
+    required this.data,
     required this.hoje,
     required this.semana,
     required this.onAlternar,
@@ -435,6 +608,9 @@ class _DiaSelecionado extends StatelessWidget {
   });
 
   final Dia dia;
+
+  /// Data aberta: é a chave das marcações exibidas.
+  final DateTime data;
   final bool hoje;
   final Semana semana;
   final void Function(Atividade atividade) onAlternar;
@@ -457,7 +633,9 @@ class _DiaSelecionado extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.end,
           children: [
             Text(
-              hoje ? '${dia.nomeExibido} · hoje' : dia.nomeExibido,
+              hoje
+                  ? '${dia.nomeExibido}, ${Datas.diaMes(data)} · hoje'
+                  : '${dia.nomeExibido}, ${Datas.diaMes(data)}',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             Text(
@@ -492,7 +670,7 @@ class _DiaSelecionado extends StatelessWidget {
                 LinhaAtividade(
                   key: ValueKey(atividade.id),
                   atividade: atividade,
-                  concluida: semana.concluida(atividade),
+                  concluida: semana.concluidaEm(data, atividade),
                   estreito: estreito,
                   editavel: editavel,
                   onAlternar: () => onAlternar(atividade),
@@ -522,12 +700,17 @@ class _DiaSelecionado extends StatelessWidget {
 class _Rodape extends StatelessWidget {
   const _Rodape({
     required this.confirmando,
+    required this.semana,
     required this.onPedir,
     required this.onCancelar,
     required this.onConfirmar,
   });
 
   final bool confirmando;
+
+  /// Semana que será desmarcada: o texto deixa claro que só ela é afetada.
+  final Agenda semana;
+
   final VoidCallback onPedir;
   final VoidCallback onCancelar;
   final VoidCallback onConfirmar;
@@ -551,7 +734,8 @@ class _Rodape extends StatelessWidget {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text(
-          'Desmarcar todas as atividades da semana? A lista de cômodos continua como está.',
+          'Desmarcar as atividades de ${Datas.intervaloSemana(semana.inicio)}? '
+          'O plano, os cômodos e as outras semanas continuam como estão.',
           style: TextStyle(fontSize: 13.5, color: paleta.textoSecundario),
         ),
         BotaoUi(rotulo: 'Desmarcar', onPressed: onConfirmar),

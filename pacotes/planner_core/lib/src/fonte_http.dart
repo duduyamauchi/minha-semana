@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'datas.dart';
 import 'fonte_dados.dart';
 import 'modelos.dart';
 
@@ -118,8 +119,11 @@ class FonteHttp implements FonteDeDados {
   }
 
   @override
-  Future<void> definirConcluida(String id, {required bool concluida}) =>
-      _enviar('PUT', '/atividades/${Uri.encodeComponent(id)}', {'concluida': concluida});
+  Future<void> definirConcluida(DateTime data, String id, {required bool concluida}) => _enviar(
+    'PUT',
+    '/atividades/${Datas.iso(data)}/${Uri.encodeComponent(id)}',
+    {'concluida': concluida},
+  );
 
   @override
   Future<void> salvarAtividade(Atividade atividade) => _enviar(
@@ -136,7 +140,8 @@ class FonteHttp implements FonteDeDados {
   );
 
   @override
-  Future<void> limparMarcacoes() => _enviar('DELETE', '/atividades', null);
+  Future<void> limparMarcacoes(DateTime inicio) =>
+      _enviar('DELETE', '/atividades?inicio=${Datas.iso(inicio)}', null);
 
   @override
   Future<void> salvarComodo(Comodo comodo) =>

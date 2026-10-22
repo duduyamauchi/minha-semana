@@ -62,15 +62,33 @@ create index if not exists tentativas_usuario_idx on tentativas_login (usuario_i
 -- Estado da semana
 -- ---------------------------------------------------------------------------
 
--- Uma linha por atividade concluída. O `id` é o do template (`seg-06:00`), o que
--- faz a marcação sobreviver a mudanças no template: inserir uma atividade nova
--- não remarca as outras.
+-- Uma linha por atividade concluída **numa data**. O `id` é o do template
+-- (`seg-06:00`), o que faz a marcação sobreviver a mudanças no template, e a
+-- data é a chave do calendário: a mesma quarta se repete, o que foi feito nela
+-- não.
+-- Em bancos antigos a tabela já existe sem `data`: o `create table if not
+-- exists` não a altera, então `deploy/migracao_calendario.sql` cuida disso.
 create table if not exists atividades_concluidas (
   quadro_id    uuid not null references quadros(id) on delete cascade,
+  data         date not null,
   atividade_id text not null,
   concluida_em timestamptz not null default now(),
-  primary key (quadro_id, atividade_id)
+  primary key (quadro_id, data, atividade_id)
 );
+
+-- Leitura é sempre por intervalo (uma semana) ou por data. O índice só pode
+-- ser criado quando a coluna existe, o que a migração garante.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'atividades_concluidas' and column_name = 'data'
+  ) then
+    execute 'create index if not exists atividades_concluidas_data_idx
+             on atividades_concluidas (quadro_id, data)';
+  end if;
+end $$;
+
 
 -- Plano do usuário: uma linha por atividade de um dia.
 --

@@ -12,7 +12,15 @@ const DIAS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];
 
 test.describe('API — público e autorização', () => {
   test('rotas do app respondem 200 e mantêm a URL', async ({ request, baseURL }) => {
-    for (const caminho of ['/', '/semana', '/dia/dom', '/acesso', '/ajustes']) {
+    for (const caminho of [
+      '/',
+      '/semana',
+      '/semana/2026-10-21',
+      '/dia/dom',
+      '/calendario',
+      '/acesso',
+      '/ajustes',
+    ]) {
       const r = await request.get(caminho, { maxRedirects: 0 });
       expect(r.status(), caminho).toBe(200);
       expect(r.headers()['content-type']).toContain('text/html');
@@ -25,7 +33,9 @@ test.describe('API — público e autorização', () => {
       (await request.put('/api/dias/seg/atividades/x', { data: { horario: '08:00', titulo: 'x' } })).status(),
     ).toBe(401);
     expect((await request.delete('/api/dias/seg/atividades/x')).status()).toBe(401);
-    expect((await request.put('/api/atividades/seg-06:00', { data: { concluida: true } })).status()).toBe(401);
+    expect(
+      (await request.put('/api/atividades/2026-10-21/seg-06:00', { data: { concluida: true } })).status(),
+    ).toBe(401);
     expect((await request.delete('/api/atividades')).status()).toBe(401);
     expect((await request.put('/api/comodos/sala', { data: { nome: 'Sala' } })).status()).toBe(401);
     expect((await request.get('/api/eventos')).status()).toBe(401);
@@ -94,7 +104,7 @@ test.describe('API — plano editável', () => {
     expect(criada).toMatchObject({ id, dia: 'qua', horario: '06:20', duracaoMinutos: 20, fixo: true });
 
     let estado = await semana(request, baseURL);
-    expect(estado.versao).toBe(3);
+    expect(estado.versao).toBe(4);
     expect(procurar(estado, titulo)).toMatchObject({ dia: 'qua', horario: '06:20', duracaoMinutos: 20 });
 
     // Editar mantém o id: a marcação, se houvesse, não se perderia.
@@ -153,22 +163,25 @@ test.describe('API — plano editável', () => {
     const id = idUnico('marca');
     const titulo = `E2E ${id}`;
 
+    const data = '2026-10-19';
     await request.put(`/api/dias/seg/atividades/${encodeURIComponent(id)}`, {
       data: { horario: '05:59', titulo, categoria: 'bemEstar' },
     });
-    expect((await request.put(`/api/atividades/${encodeURIComponent(id)}`, { data: { concluida: true } })).status()).toBe(200);
+    expect(
+      (await request.put(`/api/atividades/${data}/${encodeURIComponent(id)}`, { data: { concluida: true } })).status(),
+    ).toBe(200);
 
-    // Muda o horário: o id não muda, então a marcação continua.
+    // Muda o horário: o id não muda, então a marcação daquela data continua.
     await request.put(`/api/dias/seg/atividades/${encodeURIComponent(id)}`, {
       data: { horario: '06:05', titulo, categoria: 'bemEstar', duracaoMinutos: 10 },
     });
     let estado = await semana(request, baseURL);
-    expect(estado.marcadas).toContain(id);
+    expect(estado.concluidas[data]).toContain(id);
 
     // Excluir a atividade remove a marcação: senão o percentual contaria um id órfão.
     await request.delete(`/api/dias/seg/atividades/${encodeURIComponent(id)}`);
     estado = await semana(request, baseURL);
-    expect(estado.marcadas).not.toContain(id);
+    expect(estado.concluidas[data] ?? []).not.toContain(id);
     expect(procurar(estado, titulo)).toBeNull();
   });
 
@@ -195,7 +208,7 @@ test.describe('API — plano editável', () => {
 
     expect((await request.delete('/api/atividades')).status()).toBe(200);
     const depois = await semana(request, baseURL);
-    expect(depois.marcadas).toEqual([]);
+    expect(depois.concluidas).toEqual({});
     expect((depois.dias ?? []).reduce((s, d) => s + d.atividades.length, 0)).toBe(total);
   });
 
@@ -238,11 +251,91 @@ test.describe('API — importação de backup', () => {
     const totalAntes = (antes.dias ?? []).reduce((s, d) => s + d.atividades.length, 0);
 
     const r = await request.put('/api/semana', {
-      data: { marcadas: [], comodos: antes.comodos },
+      data: { concluidas: {}, comodos: antes.comodos },
     });
     expect(r.status()).toBe(200);
 
     const depois = await semana(request, baseURL);
     expect((depois.dias ?? []).reduce((s, d) => s + d.atividades.length, 0)).toBe(totalAntes);
+  });
+});
+
+
+test.describe('API — semanas no calendário', () => {
+  test.skip(() => !temSenha, 'senha local ausente');
+
+  const marcar = (request, data, id, concluida = true) =>
+    request.put(`/api/atividades/${data}/${encodeURIComponent(id)}`, { data: { concluida } });
+
+  test('a mesma atividade em duas datas tem marcações independentes', async ({ request, baseURL }) => {
+    await request.post('/api/sessao', { data: { usuario: USUARIO, senha: senha() } });
+
+    expect((await marcar(request, '2026-10-21', 'qua-06:00')).status()).toBe(200);
+    expect((await marcar(request, '2026-10-28', 'qua-06:00')).status()).toBe(200);
+
+    const estado = await semana(request, baseURL);
+    expect(estado.concluidas['2026-10-21']).toContain('qua-06:00');
+    expect(estado.concluidas['2026-10-28']).toContain('qua-06:00');
+
+    // Desmarcar uma data não afeta a outra.
+    expect((await marcar(request, '2026-10-21', 'qua-06:00', false)).status()).toBe(200);
+    const depois = await semana(request, baseURL);
+    expect(depois.concluidas['2026-10-21'] ?? []).not.toContain('qua-06:00');
+    expect(depois.concluidas['2026-10-28']).toContain('qua-06:00');
+
+    await request.delete(`/api/atividades/${encodeURIComponent('2026-10-28')}/qua-06:00`);
+  });
+
+  test('data inválida na rota é 400', async ({ request }) => {
+    await request.post('/api/sessao', { data: { usuario: USUARIO, senha: senha() } });
+    for (const data of ['ontem', '2026-13-01', '2026-02-31', '19-10-2026']) {
+      const r = await request.put(`/api/atividades/${encodeURIComponent(data)}/qua-06:00`, {
+        data: { concluida: true },
+      });
+      expect(r.status(), data).toBe(400);
+    }
+  });
+
+  test('limpar uma semana preserva as outras', async ({ request, baseURL }) => {
+    await request.post('/api/sessao', { data: { usuario: USUARIO, senha: senha() } });
+    const alvo = '2026-11-04';
+    const vizinha = '2026-11-11';
+
+    await marcar(request, alvo, 'qua-06:00');
+    await marcar(request, vizinha, 'qua-06:00');
+
+    const r = await request.delete(`/api/atividades?inicio=2026-11-02`);
+    expect(r.status()).toBe(200);
+    expect((await r.json()).escopo).toBe('semana');
+
+    const estado = await semana(request, baseURL);
+    expect(estado.concluidas[alvo] ?? []).not.toContain('qua-06:00');
+    expect(estado.concluidas[vizinha]).toContain('qua-06:00');
+
+    await request.delete(`/api/atividades/${vizinha}/qua-06:00`);
+  });
+
+  test('PUT /semana importa um estado com datas', async ({ request, baseURL }) => {
+    await request.post('/api/sessao', { data: { usuario: USUARIO, senha: senha() } });
+    const antes = await semana(request, baseURL);
+
+    const r = await request.put('/api/semana', {
+      data: {
+        concluidas: { '2026-10-20': ['ter-22:00'], '2026-10-22': ['qui-06:00'] },
+        comodos: antes.comodos,
+      },
+    });
+    expect(r.status()).toBe(200);
+
+    const depois = await semana(request, baseURL);
+    expect(depois.concluidas).toEqual({
+      '2026-10-20': ['ter-22:00'],
+      '2026-10-22': ['qui-06:00'],
+    });
+    // O plano não foi tocado.
+    expect(depois.dias).toBeDefined();
+    expect((depois.dias ?? []).reduce((s, d) => s + d.atividades.length, 0)).toBeGreaterThan(0);
+
+    await request.delete('/api/atividades');
   });
 });

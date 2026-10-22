@@ -86,89 +86,142 @@ void main() {
     });
   });
 
-  group('progresso', () {
-    test('começa zerado e chega a 100% com tudo marcado', () {
-      final inicial = semanaInicial();
-      expect(inicial.percentual, 0);
-      expect(inicial.totalAtividades, greaterThan(0));
+  group('progresso por data', () {
+    final segunda = DateTime(2026, 10, 19);
+    final quarta = DateTime(2026, 10, 21);
 
-      final tudo = Semana(
-        dias: inicial.dias,
-        marcadas: {
-          for (final d in inicial.dias)
-            for (final a in d.atividades) a.id,
-        },
-        comodos: inicial.comodos,
-      );
-      expect(tudo.totalFeitas, tudo.totalAtividades);
-      expect(tudo.percentual, 100);
+    test('semana nova começa zerada e chega a 100% com tudo marcado', () {
+      final agenda = Agenda.de(semanaInicial(), segunda);
+      expect(agenda.percentualDaSemana, 0);
+      expect(agenda.totalDaSemana, greaterThan(0));
+
+      var semana = semanaInicial();
+      for (final data in agenda.datas) {
+        final chave = Semana.chaveDaData(data);
+        for (final a in semana.dia(chave)!.atividades) {
+          semana = semana.definirConcluida(data, a.id, concluida: true);
+        }
+      }
+      final cheia = Agenda.de(semana, segunda);
+      expect(cheia.feitasNaSemana, cheia.totalDaSemana);
+      expect(cheia.percentualDaSemana, 100);
     });
 
-    test('marcações de IDs inexistentes não contam no total', () {
-      final semana = Semana(
-        dias: construirSemana(),
-        marcadas: const {'seg-06:00', 'fantasma-99:99'},
-        comodos: comodosPadrao(),
+    test('marcar numa data não marca em outra', () {
+      final semana = semanaInicial().definirConcluida(
+        quarta,
+        'qua-06:00',
+        concluida: true,
       );
-      expect(semana.totalFeitas, 1);
+      expect(semana.concluidasEm(quarta), {'qua-06:00'});
+      expect(semana.concluidasEm(DateTime(2026, 10, 28)), isEmpty);
+      expect(
+        Agenda.de(semana, quarta).percentualEm(quarta),
+        greaterThan(0),
+      );
+      expect(
+        Agenda.de(semana, DateTime(2026, 10, 28)).percentualEm(DateTime(2026, 10, 28)),
+        0,
+      );
     });
 
-    test('conta feitas por dia', () {
-      final semana = Semana(
-        dias: construirSemana(),
-        marcadas: const {'seg-06:00', 'seg-06:40', 'ter-22:00'},
-        comodos: comodosPadrao(),
-      );
-      final segunda = semana.dia('seg')!;
-      expect(semana.feitasNoDia(segunda), 2);
-      expect(semana.feitasNoDia(semana.dia('qua')!), 0);
+    test('IDs inexistentes não contam no total', () {
+      final semana = semanaInicial()
+          .definirConcluida(segunda, 'seg-06:00', concluida: true)
+          .definirConcluida(segunda, 'fantasma-99:99', concluida: true);
+      expect(Agenda.de(semana, segunda).feitasNaSemana, 1);
+    });
+
+    test('conta feitas por dia da semana', () {
+      final semana = semanaInicial()
+          .definirConcluida(segunda, 'seg-06:00', concluida: true)
+          .definirConcluida(segunda, 'seg-06:40', concluida: true);
+      final agenda = Agenda.de(semana, segunda);
+      expect(agenda.feitasEm(segunda), 2);
+      expect(agenda.feitasEm(quarta), 0);
+    });
+
+    test('limpar a semana não apaga o histórico de outras', () {
+      final anterior = DateTime(2026, 10, 12);
+      var semana = semanaInicial()
+          .definirConcluida(anterior, 'seg-06:00', concluida: true)
+          .definirConcluida(segunda, 'seg-06:00', concluida: true);
+
+      semana = semana.limparIntervalo(segunda);
+      expect(semana.concluidasEm(segunda), isEmpty);
+      expect(semana.concluidasEm(anterior), {'seg-06:00'});
     });
 
     test('indiceDeHoje usa segunda como zero', () {
-      expect(Semana.indiceDeHoje(DateTime(2026, 10, 19)), 0); // segunda
+      expect(Semana.indiceDeHoje(segunda), 0);
       expect(Semana.indiceDeHoje(DateTime(2026, 10, 25)), 6); // domingo
-      expect(Semana.chaveDe(DateTime(2026, 10, 21)), 'qua');
+      expect(Semana.chaveDe(quarta), 'qua');
+      expect(Semana.chaveDaData(DateTime(2026, 10, 25)), 'dom');
     });
   });
 
   group('serialização', () {
-    test('ida e volta preserva marcações e cômodos', () {
+    test('ida e volta preserva marcações por data e cômodos', () {
       final estado = EstadoSemana(
-        marcadas: const {'seg-06:00', 'dom-22:00'},
+        concluidas: const {
+          '2026-10-19': {'seg-06:00'},
+          '2026-10-21': {'dom-22:00'},
+        },
         comodos: [const Comodo(id: 'cozinha', nome: 'Cozinha', concluido: true)],
       );
       final lido = EstadoSemana.fromJson(estado.toJson());
-      expect(lido.marcadas, estado.marcadas);
+      expect(lido.concluidas, estado.concluidas);
       expect(lido.comodos.single.nome, 'Cozinha');
       expect(lido.comodos.single.concluido, isTrue);
     });
 
     test('JSON vazio ou inválido cai no padrão, sem lançar', () {
       final lido = EstadoSemana.fromJson(const {});
-      expect(lido.marcadas, isEmpty);
+      expect(lido.concluidas, isEmpty);
       expect(lido.comodos.map((c) => c.nome), contains('Guarda-roupa'));
     });
 
     test('entradas malformadas são descartadas, o resto sobrevive', () {
       final lido = EstadoSemana.fromJson(const {
-        'marcadas': ['seg-06:00', 42, '', null],
+        'concluidas': {
+          '2026-10-21': ['seg-06:00', 42, '', null],
+          'ontem': ['x'],
+          '2026-02-31': ['y'],
+          '2026-10-22': [],
+        },
         'comodos': [
           {'id': 'sala', 'nome': 'Sala'},
           {'nome': ''},
           {'id': 'sala', 'nome': 'Duplicado'},
         ],
       });
-      expect(lido.marcadas, {'seg-06:00'});
+      expect(lido.concluidas, {
+        '2026-10-21': {'seg-06:00'},
+      });
       expect(lido.comodos.map((c) => c.nome), ['Sala']);
     });
 
     test('Semana.doJson junta o estado ao template compilado', () {
       final semana = Semana.doJson(const {
-        'marcadas': ['qua-09:00'],
+        'concluidas': {
+          '2026-10-21': ['qua-09:00'],
+        },
       }, base: construirSemana());
       expect(semana.dias, hasLength(7));
-      expect(semana.totalFeitas, 1);
+      expect(Agenda.de(semana, DateTime(2026, 10, 21)).feitasNaSemana, 1);
       expect(semana.dia('qua')!.atividade('qua-09:00')?.titulo, 'Reorganização');
+    });
+
+    test('formato antigo sem data é migrado sem inventar marcações', () {
+      final estado = EstadoSemana.fromJson(const {
+        'versao': 3,
+        'marcadas': ['seg-06:00', 'dom-22:00'],
+        'comodos': [
+          {'id': 'sala', 'nome': 'Sala'},
+        ],
+      });
+      expect(estado.concluidas, isEmpty);
+      expect(estado.comodos.single.nome, 'Sala');
     });
   });
 

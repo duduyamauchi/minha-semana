@@ -7,10 +7,10 @@ cada item. Serve para não repetir checagem nem confiar em memória.
 
 | Suíte | Comando | Resultado |
 | --- | --- | --- |
-| Núcleo | `cd pacotes/planner_core && flutter test` | 84 testes |
-| App | `cd planner && flutter test` | 18 testes |
-| API | `cd api && npm test` | 45 testes |
-| **Ponta a ponta** | `cd e2e && npm test` | **33 testes** (14 API + 19 interface) |
+| Núcleo | `cd pacotes/planner_core && flutter test` | 107 testes |
+| App | `cd planner && flutter test` | 27 testes |
+| API | `cd api && npm test` | 48 testes |
+| **Ponta a ponta** | `cd e2e && npm test` | **41 testes** (18 API + 23 interface) |
 | Análise estática | `flutter analyze` nos dois pacotes Dart | limpo |
 
 Os testes de ponta a ponta rodam contra o site publicado, em Chromium real, e
@@ -29,6 +29,17 @@ encontraram dois bugs que nenhuma outra suíte pegava:
 Além disso, o E2E expôs que o export de backup não dava saída prática: o texto
 ficava só num campo interno. O botão **Exportar** agora copia o JSON para a área
 de transferência.
+
+## Calendário (verificado em produção)
+
+| O que | Evidência |
+| --- | --- |
+| Data na URL | `/semana/2026-10-21` abre aquela semana; abas mostram 19 a 25 |
+| Navegação | setas mudam a semana e a URL; "Hoje" volta para a atual |
+| Date picker | abre em português, aceita `05/11/2026` e troca a semana |
+| Progresso por data | marcar a quarta marca só aquela quarta (API: `concluidas['2026-10-21']`) |
+| Visão de calendário | mês (outubro de 2026) + prancha dos 7 dias, com progresso real |
+| Voltar do calendário | retorna ao dia aberto (`/semana/2026-10-21`), não a hoje |
 
 ## Plano editável (verificado em produção)
 

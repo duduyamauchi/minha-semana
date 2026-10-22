@@ -1,4 +1,5 @@
 import 'dados_semana.dart';
+import 'datas.dart';
 import 'modelos.dart';
 
 /// Contrato de qualquer origem de dados do aplicativo.
@@ -32,11 +33,15 @@ abstract interface class FonteDeDados {
   /// caminho do dia a dia: para marcar uma atividade, use [definirConcluida].
   Future<EstadoSemana> salvar(EstadoSemana estado);
 
-  /// Marca ou desmarca uma atividade.
-  Future<void> definirConcluida(String id, {required bool concluida});
+  /// Marca ou desmarca uma atividade **numa data**.
+  ///
+  /// A data é a chave da marcação: a mesma rotina de quarta vale para todas as
+  /// quartas, e cada uma é marcada separadamente.
+  Future<void> definirConcluida(DateTime data, String id, {required bool concluida});
 
-  /// Desmarca a semana inteira, preservando o plano e os cômodos.
-  Future<void> limparMarcacoes();
+  /// Desmarca a semana que começa em [inicio], preservando o template e os
+  /// cômodos. Marcações de outras semanas não são tocadas.
+  Future<void> limparMarcacoes(DateTime inicio);
 
   /// Insere ou atualiza uma atividade do plano.
   ///
@@ -91,20 +96,40 @@ mixin GravacaoGranular implements FonteDeDados {
   List<Dia> _plano() => estadoAtual.dias ?? construirPlanoInicial();
 
   @override
-  Future<void> definirConcluida(String id, {required bool concluida}) => _compor((atual) {
-    final marcadas = Set<String>.of(atual.marcadas);
-    if (concluida) {
-      marcadas.add(id);
-    } else {
-      marcadas.remove(id);
-    }
-    return EstadoSemana(marcadas: marcadas, comodos: atual.comodos, dias: atual.dias);
-  });
+  Future<void> definirConcluida(DateTime data, String id, {required bool concluida}) =>
+      _compor((atual) {
+        final chave = Datas.iso(data);
+        final doDia = Set<String>.of(atual.concluidas[chave] ?? const {});
+        if (concluida) {
+          doDia.add(id);
+        } else {
+          doDia.remove(id);
+        }
+        return EstadoSemana(
+          concluidas: {
+            for (final e in atual.concluidas.entries)
+              if (e.key != chave) e.key: e.value,
+            if (doDia.isNotEmpty) chave: doDia,
+          },
+          comodos: atual.comodos,
+          dias: atual.dias,
+        );
+      });
 
   @override
-  Future<void> limparMarcacoes() => _compor(
-    (atual) => EstadoSemana(marcadas: const {}, comodos: atual.comodos, dias: atual.dias),
-  );
+  Future<void> limparMarcacoes(DateTime inicio) => _compor((atual) {
+    final alvo = {
+      for (var i = 0; i < 7; i++) Datas.iso(Datas.somarDias(inicio, i)),
+    };
+    return EstadoSemana(
+      concluidas: {
+        for (final e in atual.concluidas.entries)
+          if (!alvo.contains(e.key)) e.key: e.value,
+      },
+      comodos: atual.comodos,
+      dias: atual.dias,
+    );
+  });
 
   @override
   Future<void> salvarAtividade(Atividade atividade) => _compor((atual) {
@@ -118,7 +143,7 @@ mixin GravacaoGranular implements FonteDeDados {
           ? [for (final a in dia.atividades) if (a.id == atividade.id) atividade else a]
           : [...dia.atividades, atividade],
     );
-    return EstadoSemana(marcadas: atual.marcadas, comodos: atual.comodos, dias: plano);
+    return EstadoSemana(concluidas: atual.concluidas, comodos: atual.comodos, dias: plano);
   });
 
   @override
@@ -131,8 +156,13 @@ mixin GravacaoGranular implements FonteDeDados {
         if (a.id != id) a,
     ];
     plano[i] = plano[i].copiarCom(atividades: atividades);
+    // A marcação do id removido sai de todas as datas: sozinha, inflaria o
+    // percentual de semanas que já passaram.
     return EstadoSemana(
-      marcadas: {...atual.marcadas}..remove(id),
+      concluidas: {
+        for (final e in atual.concluidas.entries)
+          if (e.value.contains(id)) e.key: {...e.value}..remove(id) else e.key: e.value,
+      },
       comodos: atual.comodos,
       dias: plano,
     );
@@ -142,7 +172,7 @@ mixin GravacaoGranular implements FonteDeDados {
   Future<void> salvarComodo(Comodo comodo) => _compor((atual) {
     final existe = atual.comodos.any((c) => c.id == comodo.id);
     return EstadoSemana(
-      marcadas: atual.marcadas,
+      concluidas: atual.concluidas,
       comodos: existe
           ? [for (final c in atual.comodos) if (c.id == comodo.id) comodo else c]
           : [...atual.comodos, comodo],
@@ -153,7 +183,7 @@ mixin GravacaoGranular implements FonteDeDados {
   @override
   Future<void> removerComodo(String id) => _compor(
     (atual) => EstadoSemana(
-      marcadas: atual.marcadas,
+      concluidas: atual.concluidas,
       comodos: [for (final c in atual.comodos) if (c.id != id) c],
       dias: atual.dias,
     ),

@@ -1,8 +1,9 @@
 # Testes de ponta a ponta
 
 Suíte Playwright contra o site publicado: cobre a API (contrato, autorização,
-ciclo de vida dos dados) e a interface em Chromium real (login, semana, plano
-editável, cômodos, reset, ajustes, backup, links profundos, mobile e tema).
+ciclo de vida dos dados, marcações por data) e a interface em Chromium real
+(login, semana navegável, date picker, visão de calendário, plano editável,
+cômodos, reset, ajustes, backup, links profundos, mobile e tema).
 
 ## Rodar
 
@@ -37,6 +38,9 @@ a suíte continua valendo para rotas públicas e API anônima.
 - **Estado real da usuária.** Os testes rodam sobre o plano de verdade. Não há
   banco de teste separado; é o custo de testar o ambiente publicado de ponta a
   ponta.
+- **Datas fixas.** Os testes de calendário usam `2026-10-21` (quarta) e limpam as
+  marcações da semana antes de medir, para não dependerem do dia da execução nem
+  do que ficou de uma rodada anterior.
 
 ## Armadilhas do Flutter Web (aprendidas aqui)
 
@@ -52,3 +56,6 @@ a suíte continua valendo para rotas públicas e API anônima.
 | mensagem duplicada | snackbar + `flt-announcement-polite` | `.first()` |
 | conteúdo do `TextField` invisível | o DOM é só ponte de teclado | verificar pela API |
 | `labelText` não vira `aria-label` | o Flutter não propaga em `textarea` | selecionar por tag |
+| clique em botão da prancha bloqueado | canvas intercepta o ponteiro | `click({ force: true })` |
+| data picker sem campo | abre no modo calendário | botão "Mudar para modo de entrada" |
+| rótulo do checkbox muda ao marcar | "Marcar X" vira "Desmarcar X" | casar por `/X/` |

@@ -267,9 +267,9 @@ List<Dia> construirSemana() => [
 /// gravados (primeira abertura e migração do formato v2).
 List<Dia> construirPlanoInicial() => construirSemana();
 
-/// Semana recém-criada: plano inicial, nada marcado, cômodos padrão.
+/// Plano recém-criado: template inicial, nada marcado, cômodos padrão.
 Semana semanaInicial() => Semana(
   dias: construirSemana(),
-  marcadas: const {},
+  concluidas: const {},
   comodos: comodosPadrao(),
 );

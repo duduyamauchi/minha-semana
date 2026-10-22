@@ -83,18 +83,19 @@ void main() {
     });
 
     test('editar horário mantém o id e a marcação', () {
+      final segunda = DateTime(2026, 10, 19);
       final original = semana.dia('seg')!.atividades.first;
       final editada = original.copiarCom(horario: '07:00', duracaoMinutos: 15);
       final depois = semana
-          .copiarCom(marcadas: {original.id})
+          .definirConcluida(segunda, original.id, concluida: true)
           .salvarAtividade(editada);
 
       final relida = depois.dia('seg')!.atividade(original.id)!;
       expect(relida.horario, '07:00');
       expect(relida.duracaoMinutos, 15);
       // A marcação sobrevive à edição: o id é a identidade, não o horário.
-      expect(depois.concluida(relida), isTrue);
-      expect(depois.totalFeitas, 1);
+      expect(depois.concluidaEm(segunda, relida), isTrue);
+      expect(Agenda.de(depois, segunda).feitasNaSemana, 1);
     });
 
     test('editar categoria e detalhe persiste', () {
@@ -113,16 +114,22 @@ void main() {
       expect(depois.dia('seg')!.atividade(comDuracao.id)!.duracaoMinutos, isNull);
     });
 
-    test('removerAtividade tira a linha e a marcação', () {
+    test('removerAtividade tira a linha e as marcações em todas as datas', () {
+      final quarta = DateTime(2026, 10, 21);
+      final outraQuarta = DateTime(2026, 10, 28);
       final alvo = semana.dia('qua')!.atividades.first;
+      final outra = semana.dia('qua')!.atividades[1];
       final depois = semana
-          .copiarCom(marcadas: {alvo.id, 'seg-06:00'})
+          .definirConcluida(quarta, alvo.id, concluida: true)
+          .definirConcluida(outraQuarta, alvo.id, concluida: true)
+          .definirConcluida(quarta, outra.id, concluida: true)
           .removerAtividade('qua', alvo.id);
 
       expect(depois.dia('qua')!.atividade(alvo.id), isNull);
-      expect(depois.marcadas, isNot(contains(alvo.id)));
-      expect(depois.marcadas, contains('seg-06:00'));
-      expect(depois.totalFeitas, 1);
+      expect(depois.concluidasEm(quarta), {outra.id});
+      // A data sem nenhuma outra marcação sai do mapa (não fica chave vazia).
+      expect(depois.concluidasEm(outraQuarta), isEmpty);
+      expect(Agenda.de(depois, quarta).feitasNaSemana, 1);
     });
 
     test('remover id inexistente não muda nada', () {
@@ -135,7 +142,7 @@ void main() {
         vazia = vazia.removerAtividade('dom', a.id);
       }
       expect(vazia.dia('dom')!.atividades, isEmpty);
-      expect(vazia.percentual, 0);
+      expect(Agenda.de(vazia, DateTime(2026, 10, 25)).percentualEm(DateTime(2026, 10, 25)), 0);
     });
 
     test('idLivre não reutiliza id existente', () {
@@ -190,7 +197,8 @@ void main() {
       expect(v2.dias, isNull);
       final semana = Semana.doJson(v2.toJson(), base: construirPlanoInicial());
       expect(semana.dias, hasLength(7));
-      expect(semana.marcadas, {'seg-06:00'});
+      // `marcadas` não tinha data: não há como atribuí-la a um dia sem inventar.
+      expect(semana.concluidas, isEmpty);
     });
 
     test('atividade inválida no JSON não derruba o plano', () {

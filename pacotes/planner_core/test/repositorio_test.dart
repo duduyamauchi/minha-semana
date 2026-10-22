@@ -82,39 +82,71 @@ void main() {
     });
   });
 
-  group('marcar atividade', () {
-    test('atualiza o estado local imediatamente e persiste', () async {
+  group('marcar atividade por data', () {
+    final segunda = DateTime(2026, 10, 19);
+    final quarta = DateTime(2026, 10, 21);
+
+    test('atualiza o estado local imediatamente e persiste na data', () async {
+      rep.irPara(segunda);
       final atividade = rep.dias.first.atividades.first;
       final futuro = rep.marcar(atividade, concluida: true);
 
       // Antes da persistência terminar, o estado já reflete a marcação.
-      expect(rep.semana.concluida(atividade), isTrue);
+      expect(rep.concluidaNaData(atividade), isTrue);
       await futuro;
 
-      expect(await fonte.carregar(), isA<EstadoSemana>());
-      expect((await fonte.carregar()).marcadas, contains(atividade.id));
+      final salvo = await fonte.carregar();
+      expect(salvo.concluidas['2026-10-19'], contains(atividade.id));
       expect(rep.percentual, greaterThan(0));
     });
 
+    test('a mesma atividade não fica marcada em outra semana', () async {
+      rep.irPara(segunda);
+      final atividade = rep.dias.first.atividades.first;
+      await rep.marcar(atividade, concluida: true);
+
+      rep.moverSemana(1);
+      expect(rep.selecionado, DateTime(2026, 10, 26));
+      expect(rep.concluidaNaData(atividade), isFalse);
+      expect(rep.percentual, 0);
+
+      final salvo = await fonte.carregar();
+      expect(salvo.concluidas['2026-10-19'], contains(atividade.id));
+      expect(salvo.concluidas['2026-10-26'], isNull);
+    });
+
     test('desmarcar remove do estado e da fonte', () async {
+      rep.irPara(segunda);
       final atividade = rep.dias.first.atividades.first;
       await rep.marcar(atividade, concluida: true);
       await rep.marcar(atividade, concluida: false);
-      expect(rep.semana.concluida(atividade), isFalse);
-      expect((await fonte.carregar()).marcadas, isEmpty);
+      expect(rep.concluidaNaData(atividade), isFalse);
+      expect((await fonte.carregar()).concluidas, isEmpty);
     });
 
     test('alternar inverte a marcação', () async {
-      final atividade = rep.dias[1].atividades.first;
+      rep.irPara(segunda);
+      final atividade = rep.dias.first.atividades.first;
       await rep.alternar(atividade);
-      expect(rep.semana.concluida(atividade), isTrue);
+      expect(rep.concluidaNaData(atividade), isTrue);
       await rep.alternar(atividade);
-      expect(rep.semana.concluida(atividade), isFalse);
+      expect(rep.concluidaNaData(atividade), isFalse);
+    });
+
+    test('marcar atividade de outro dia cai no dia dela dentro da semana', () async {
+      rep.irPara(segunda);
+      final terca = rep.dias[1].atividades.first;
+      await rep.marcar(terca, concluida: true);
+
+      final salvo = await fonte.carregar();
+      expect(salvo.concluidas['2026-10-20'], contains(terca.id));
+      expect(rep.agenda.feitasNaSemana, 1);
     });
 
     test('gravação falha mantém a marcação local e reporta erro', () async {
       final quebrada = Repositorio(_FonteQuebrada());
       await quebrada.carregar();
+      quebrada.irPara(segunda);
       final atividade = quebrada.dias.first.atividades.first;
 
       final ok = await quebrada.marcar(atividade, concluida: true);
@@ -122,33 +154,66 @@ void main() {
       expect(ok, isFalse);
       expect(quebrada.erro, 'O servidor recusou a gravação.');
       // O dado digitado não é revertido: perder a marcação seria pior.
-      expect(quebrada.semana.concluida(atividade), isTrue);
+      expect(quebrada.concluidaNaData(atividade), isTrue);
     });
 
     test('fonte somente leitura recusa a escrita sem alterar o estado', () async {
       final somenteLeitura = Repositorio(_FonteLeitura());
       await somenteLeitura.carregar();
+      somenteLeitura.irPara(segunda);
       final atividade = somenteLeitura.dias.first.atividades.first;
 
       final ok = await somenteLeitura.marcar(atividade, concluida: true);
 
       expect(ok, isFalse);
-      expect(somenteLeitura.semana.concluida(atividade), isFalse);
+      expect(somenteLeitura.concluidaNaData(atividade), isFalse);
       expect(somenteLeitura.erro, contains('não aceita alterações'));
+    });
+
+    test('agenda expõe a semana da data aberta', () async {
+      rep.irPara(quarta);
+      final agenda = rep.agenda;
+      expect(agenda.inicio, segunda);
+      expect(agenda.fim, DateTime(2026, 10, 25));
+      expect(agenda.datas, hasLength(7));
+      expect(agenda.chaveDoSelecionado(), 'qua');
+      expect(agenda.diaSelecionado.nome, 'Quarta');
+    });
+
+    test('mover uma semana mantém o dia da semana aberto', () async {
+      rep.irPara(quarta);
+      rep.moverSemana(1);
+      expect(rep.selecionado, DateTime(2026, 10, 28));
+      expect(rep.agenda.chaveDoSelecionado(), 'qua');
+      rep.moverSemana(-2);
+      expect(rep.selecionado, DateTime(2026, 10, 14));
+    });
+
+    test('ir para hoje volta à data de referência', () async {
+      rep.agora = () => DateTime(2026, 10, 21, 15, 30);
+      rep.irPara(DateTime(2026, 12, 1));
+      rep.irParaHoje();
+      expect(rep.selecionado, DateTime(2026, 10, 21));
+      expect(rep.hojeNaSemana, isTrue);
     });
   });
 
   group('gravação por entidade', () {
     test('dois aparelhos marcando atividades diferentes não se sobrescrevem', () async {
       // A mesma fonte, dois Repositorios: é o cenário de duas abas abertas.
+      final data = DateTime(2026, 10, 19);
       final outro = Repositorio(fonte);
       await outro.carregar();
+      rep.irPara(data);
+      outro.irPara(data);
 
       await rep.marcar(rep.dias[0].atividades[0], concluida: true);
       await outro.marcar(outro.dias[1].atividades[0], concluida: true);
 
       final estado = await fonte.carregar();
-      expect(estado.marcadas, containsAll([rep.dias[0].atividades[0].id, outro.dias[1].atividades[0].id]));
+      // Cada marcação cai no dia da própria atividade, na mesma semana.
+      expect(estado.concluidas['2026-10-19'], contains(rep.dias[0].atividades[0].id));
+      expect(estado.concluidas['2026-10-20'], contains(outro.dias[1].atividades[0].id));
     });
   });
 
@@ -186,18 +251,28 @@ void main() {
   });
 
   group('nova semana', () {
-    test('limpar marcações preserva os cômodos', () async {
+    test('limpar a semana aberta preserva cômodos e histórico', () async {
+      final anterior = DateTime(2026, 10, 12);
+      final atual = DateTime(2026, 10, 19);
+
+      rep.irPara(anterior);
+      await rep.marcar(rep.dias.first.atividades.first, concluida: true);
+
+      rep.irPara(atual);
       await rep.marcar(rep.dias.first.atividades.first, concluida: true);
       await rep.alternarComodo(rep.comodos.first);
       final comodosAntes = rep.comodos.map((c) => c.id).toList();
 
       await rep.limparMarcacoes();
 
-      expect(rep.semana.marcadas, isEmpty);
+      expect(rep.agenda.feitasNaSemana, 0);
       expect(rep.percentual, 0);
       expect(rep.comodos.map((c) => c.id), comodosAntes);
+
       final estado = await fonte.carregar();
-      expect(estado.marcadas, isEmpty);
+      expect(estado.concluidas['2026-10-19'], isNull);
+      // A semana anterior continua no histórico.
+      expect(estado.concluidas['2026-10-12'], isNotEmpty);
       expect(estado.comodos.first.concluido, isTrue);
     });
   });
@@ -212,6 +287,7 @@ void main() {
       final evento = rep.analytics.recentes.lastWhere((e) => e.nome == 'atividade_concluida');
       expect(evento.entidadeId, atividade.id);
       expect(evento.propriedades['dia'], 'seg');
+      expect(evento.propriedades['data'], matches(RegExp(r'^\d{4}-\d{2}-\d{2}$')));
       expect(evento.propriedades['percentual'], greaterThan(0));
     });
 
@@ -235,10 +311,15 @@ void main() {
   group('importação', () {
     test('substitui o estado inteiro', () async {
       final ok = await rep.importar(
-        EstadoSemana(marcadas: const {'sex-11:00'}, comodos: [const Comodo(id: 'adega', nome: 'Adega')]),
+        EstadoSemana(
+          concluidas: const {
+            '2026-10-23': {'sex-11:00'},
+          },
+          comodos: [const Comodo(id: 'adega', nome: 'Adega')],
+        ),
       );
       expect(ok, isTrue);
-      expect(rep.semana.marcadas, {'sex-11:00'});
+      expect(rep.semana.concluidasEm(DateTime(2026, 10, 23)), {'sex-11:00'});
       expect(rep.comodos.single.nome, 'Adega');
     });
   });
@@ -283,6 +364,8 @@ void _testesDeEdicao() {
     });
 
     test('editar horário e duração grava e mantém a marcação', () async {
+      final data = DateTime(2026, 10, 19);
+      rep.irPara(data);
       final original = rep.dias.first.atividades.first;
       await rep.alternar(original);
 
@@ -294,7 +377,7 @@ void _testesDeEdicao() {
       final relida = rep.semana.dia(original.dia)!.atividade(original.id)!;
       expect(relida.horario, '05:45');
       expect(relida.duracaoMinutos, 25);
-      expect(rep.semana.concluida(relida), isTrue);
+      expect(rep.concluidaNaData(relida), isTrue);
 
       final salvo = await fonte.carregar();
       final gravada = salvo.dias!.firstWhere((d) => d.chave == original.dia).atividade(original.id)!;
@@ -302,7 +385,9 @@ void _testesDeEdicao() {
       expect(gravada.duracaoMinutos, 25);
     });
 
-    test('excluir remove da tela, da fonte e da marcação', () async {
+    test('excluir remove da tela, da fonte e das marcações', () async {
+      final data = DateTime(2026, 10, 21);
+      rep.irPara(data);
       final alvo = rep.dias[2].atividades.first;
       await rep.alternar(alvo);
 
@@ -310,9 +395,8 @@ void _testesDeEdicao() {
 
       expect(ok, isTrue);
       expect(rep.semana.dia(alvo.dia)!.atividade(alvo.id), isNull);
-      expect(rep.semana.marcadas, isNot(contains(alvo.id)));
       final salvo = await fonte.carregar();
-      expect(salvo.marcadas, isNot(contains(alvo.id)));
+      expect(salvo.concluidas[Datas.iso(data)] ?? const <String>{}, isNot(contains(alvo.id)));
       expect(salvo.dias!.firstWhere((d) => d.chave == alvo.dia).atividade(alvo.id), isNull);
     });
 

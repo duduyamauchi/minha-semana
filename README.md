@@ -1,8 +1,10 @@
 # Minha Semana
 
 Planejador semanal em Flutter, a partir do `Minha Semana.html`. O plano é
-**editável**: cada dia aceita criar, editar e excluir atividades, com horário e
-duração próprios. O progresso fica salvo. Funciona **sem conta** (estado no aparelho) e, com a API
+**editável** e vive num **calendário**: cada dia aceita criar, editar e excluir
+atividades (com horário e duração), e cada data guarda o próprio progresso —
+navegue por semanas, escolha uma data no seletor ou abra a visão de calendário
+com os sete dias juntos. Funciona **sem conta** (estado no aparelho) e, com a API
 publicada, **sincroniza na nuvem** entre aparelhos.
 
 | Projeto | O que é | Plataformas |
@@ -28,6 +30,8 @@ Publicado e lendo do Postgres.
 | Recurso | URL |
 | --- | --- |
 | Aplicativo e API | https://minhasemana.pages.dev (`/api/*` é a API) |
+| Semana por data | https://minhasemana.pages.dev/semana/2026-10-21 |
+| Calendário | https://minhasemana.pages.dev/calendario |
 
 O app é compilado com `PLANNER_FONTE=http` e `PLANNER_API=/api`. App e API são o
 mesmo projeto Cloudflare Pages, servidos na mesma origem — o cookie de sessão é
@@ -40,6 +44,10 @@ fica no banco: ele é compilado no app, então mudar a rotina não exige migraç
 
 **O plano é dado, não código.** O que vem do HTML é só a semente da primeira
 abertura; dali em diante, criar/editar/excluir atividades é operação de tela.
+
+**Uma rotina, muitas semanas.** O plano (template) é o mesmo em todas as
+semanas; o que muda por data é o que foi feito. Marcar uma quarta não marca as
+outras, e "começar nova semana" afeta só a semana visível.
 
 ### Segurança
 

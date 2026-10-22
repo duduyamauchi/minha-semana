@@ -92,43 +92,66 @@ test.describe('semana', () => {
 
   test('marcar, desmarcar e recarregar mantém o progresso', async ({ page, request, baseURL }) => {
     const api = await apiAutenticada(request, baseURL);
-    const antes = await semana(api, baseURL);
+    // Data fixa: a tela abre `/semana/2026-10-21` e a marcação cai naquela data.
+    const data = '2026-10-21';
+    const contar = (estado) =>
+      Object.values(estado.concluidas ?? {}).reduce((s, ids) => s + ids.length, 0);
 
-    await page.getByRole('button', { name: /^Domingo,/ }).click();
-    // O primeiro checkbox do domingo é "Acordar"; marcar/desmarcar sempre muda
-    // a contagem, então o teste não depende do estado anterior.
-    await page.getByRole('checkbox').first().click();
-    await page.waitForTimeout(1200);
+    // Estado conhecido: a semana começa sem marcações.
+    await api.delete('/api/atividades?inicio=2026-10-19');
+    await page.goto('/semana/2026-10-21', { waitUntil: 'domcontentloaded' });
+    await ativarSemantica(page);
+    await aguardarSemana(page);
+
+    const antes = await semana(api, baseURL);
+    await page.getByRole('button', { name: /^Quarta,/ }).click();
+    // O rótulo alterna entre "Marcar …" e "Desmarcar …": casa pela atividade.
+    const caixa = page.getByRole('checkbox', { name: /Acordar/ }).first();
+    await expect(caixa).not.toBeChecked();
+    await caixa.click();
+    await expect(caixa).toBeChecked({ timeout: 15_000 });
 
     const depois = await semana(api, baseURL);
-    expect(depois.marcadas.length).not.toBe(antes.marcadas.length);
+    expect(contar(depois)).not.toBe(contar(antes));
+    expect(depois.concluidas[data]?.length ?? 0).toBe(1);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     await ativarSemantica(page);
     await aguardarSemana(page);
+    await expect(page).toHaveURL(/\/semana\/2026-10-21$/);
 
+    // Persistiu: a mesma data continua marcada depois do reload.
     const terceira = await semana(api, baseURL);
-    expect(terceira.marcadas.length).toBe(depois.marcadas.length);
+    expect(terceira.concluidas[data]?.length ?? 0).toBe(1);
+    await expect(page.getByRole('checkbox', { name: /Acordar/ }).first()).toBeChecked();
   });
 
   test('"Começar nova semana" pede confirmação, desmarca e preserva o plano', async ({ page, request, baseURL }) => {
     const api = await apiAutenticada(request, baseURL);
+    await page.goto('/semana/2026-10-21', { waitUntil: 'domcontentloaded' });
+    await ativarSemantica(page);
+    await aguardarSemana(page);
+    await page.getByRole('checkbox').first().click();
+    await page.waitForTimeout(1200);
+
     const antes = await semana(api, baseURL);
     const totalAntes = (antes.dias ?? []).reduce((s, d) => s + d.atividades.length, 0);
+    const contar = (estado) =>
+      Object.values(estado.concluidas ?? {}).reduce((s, ids) => s + ids.length, 0);
 
     await page.getByText('Começar nova semana').click();
-    await expect(page.getByText(/Desmarcar todas as atividades/)).toBeVisible();
+    await expect(page.getByText(/Desmarcar as atividades de/)).toBeVisible();
 
     // Cancelar não muda nada.
     await page.getByText('Cancelar', { exact: true }).click();
-    expect((await semana(api, baseURL)).marcadas.length).toBe(antes.marcadas.length);
+    expect(contar(await semana(api, baseURL))).toBe(contar(antes));
 
     await page.getByText('Começar nova semana').click();
     await page.getByRole('button', { name: /^Desmarcar$/ }).last().click();
-    await expect(page.getByText('Semana desmarcada. Os cômodos continuam como estavam.').first()).toBeVisible();
+    await expect(page.getByText(/desmarcada\. O plano e os cômodos continuam/).first()).toBeVisible();
 
     const depois = await semana(api, baseURL);
-    expect(depois.marcadas).toEqual([]);
+    expect(depois.concluidas['2026-10-21'] ?? []).toEqual([]);
     expect((depois.dias ?? []).reduce((s, d) => s + d.atividades.length, 0)).toBe(totalAntes);
   });
 });
@@ -378,13 +401,13 @@ test.describe('ajustes e backup', () => {
 
     const texto = await page.evaluate(() => navigator.clipboard.readText());
     const exportado = JSON.parse(texto);
-    expect(exportado.versao).toBe(3);
+    expect(exportado.versao).toBe(4);
     expect(Array.isArray(exportado.dias)).toBe(true);
     // O export é o mesmo estado que a API serve.
     const api = await apiAutenticada(request, baseURL);
     const estado = await semana(api, baseURL);
     expect(exportado.dias.length).toBe(estado.dias.length);
-    expect(new Set(exportado.marcadas)).toEqual(new Set(estado.marcadas));
+    expect(exportado.concluidas).toEqual(estado.concluidas);
 
     // Importar lixo não derruba a tela nem o plano.
     // O Flutter não propaga o `labelText` como `aria-label` no `<textarea>`;

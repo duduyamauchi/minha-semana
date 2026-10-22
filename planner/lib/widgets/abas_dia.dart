@@ -9,44 +9,45 @@ import 'package:planner_ui/planner_ui.dart';
 class AbasDia extends StatelessWidget {
   const AbasDia({
     super.key,
-    required this.dias,
-    required this.selecionado,
-    required this.indiceHoje,
-    required this.feitas,
+    required this.agenda,
     required this.onSelecionar,
     this.estreito = false,
+    this.hoje,
   });
 
-  final List<Dia> dias;
-  final int selecionado;
-  final int indiceHoje;
+  /// A semana exibida, com as marcações daquelas datas.
+  final Agenda agenda;
 
-  /// Concluídas por dia, na mesma ordem de [dias].
-  final List<int> feitas;
-
-  final ValueChanged<int> onSelecionar;
+  /// Recebe a data tocada (não o índice): quem chama abre aquele dia.
+  final ValueChanged<DateTime> onSelecionar;
 
   /// Layout compacto (tela pequena).
   final bool estreito;
 
+  /// Data de hoje, para destacar a aba — `null` para não destacar nenhuma.
+  final DateTime? hoje;
+
   @override
   Widget build(BuildContext context) {
     final paleta = EscopoUi.de(context);
+    final datas = agenda.datas;
     return Row(
       children: [
-        for (var i = 0; i < dias.length; i++)
+        for (var i = 0; i < datas.length; i++)
           Expanded(
             child: Padding(
-              padding: EdgeInsets.only(right: i == dias.length - 1 ? 0 : 6),
+              padding: EdgeInsets.only(right: i == datas.length - 1 ? 0 : 6),
               child: _Aba(
-                dia: dias[i],
-                selecionada: i == selecionado,
-                hoje: i == indiceHoje,
-                feitas: feitas[i],
-                total: dias[i].atividades.length,
+                dia: agenda.diaDaData(datas[i]),
+                data: datas[i],
+                selecionada: Datas.mesmoDia(datas[i], agenda.selecionado),
+                hoje: hoje != null && Datas.mesmoDia(datas[i], hoje!),
+                feitas: agenda.feitasEm(datas[i]),
+                total: agenda.totalEm(datas[i]),
+                estrela: agenda.percentualEm(datas[i]) == 100 && agenda.totalEm(datas[i]) > 0,
                 estreito: estreito,
                 paleta: paleta,
-                onTap: () => onSelecionar(i),
+                onTap: () => onSelecionar(datas[i]),
               ),
             ),
           ),
@@ -58,6 +59,7 @@ class AbasDia extends StatelessWidget {
 class _Aba extends StatelessWidget {
   const _Aba({
     required this.dia,
+    required this.data,
     required this.selecionada,
     required this.hoje,
     required this.feitas,
@@ -65,9 +67,11 @@ class _Aba extends StatelessWidget {
     required this.estreito,
     required this.paleta,
     required this.onTap,
+    this.estrela = false,
   });
 
   final Dia dia;
+  final DateTime data;
   final bool selecionada;
   final bool hoje;
   final int feitas;
@@ -75,6 +79,9 @@ class _Aba extends StatelessWidget {
   final bool estreito;
   final PaletaUi paleta;
   final VoidCallback onTap;
+
+  /// Dia com tudo feito: ganha um marcador discreto.
+  final bool estrela;
 
   @override
   Widget build(BuildContext context) {
@@ -86,7 +93,9 @@ class _Aba extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selecionada,
-      label: '${dia.nomeExibido}, $feitas de $total atividades',
+      label:
+          '${dia.nomeExibido}, ${Datas.dataCurta(data)}, '
+          '$feitas de $total atividades',
       child: Material(
         color: selecionada ? paleta.destaque : paleta.superficie,
         borderRadius: BorderRadius.circular(paleta.raioMedio),
@@ -120,6 +129,16 @@ class _Aba extends StatelessWidget {
                 ),
                 if (!estreito) ...[
                   const SizedBox(height: 2),
+                  // A data é o que liga a aba ao calendário: sem ela, duas
+                  // quartas seguidas seriam visualmente idênticas.
+                  Text(
+                    '${data.day}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: corSecundaria,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
                   Text(
                     '$feitas/$total',
                     style: TextStyle(
@@ -128,6 +147,10 @@ class _Aba extends StatelessWidget {
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
+                ],
+                if (estrela) ...[
+                  const SizedBox(height: 2),
+                  Icon(Icons.check_circle, size: 11, color: corSecundaria),
                 ],
               ],
             ),

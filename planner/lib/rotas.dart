@@ -6,6 +6,7 @@ import 'package:planner_core/planner_core.dart';
 import 'core/escopo.dart';
 import 'telas/acesso.dart';
 import 'telas/ajustes.dart';
+import 'telas/calendario.dart';
 import 'telas/semana.dart';
 
 /// Rotas do aplicativo.
@@ -68,9 +69,26 @@ class Rotas {
         path: '/semana',
         builder: (context, estado) => _semana(context, estado),
       ),
+      // `/semana/2026-10-21` — a data é a chave de navegação: recarregar a
+      // página mantém a semana aberta, e o link é compartilhável.
+      GoRoute(
+        path: '/semana/:data',
+        builder: (context, estado) => _semana(context, estado),
+      ),
       GoRoute(
         path: '/dia/:chave',
         builder: (context, estado) => _semana(context, estado),
+      ),
+      GoRoute(
+        path: '/calendario',
+        builder: (context, estado) => TelaCalendario(
+          repositorio: repositorio,
+          aoAbrirDia: (data) => context.go('/semana/${Datas.iso(data)}'),
+          // Volta para o dia que estava aberto — não para "hoje": quem saiu de
+          // 5 de novembro espera voltar a 5 de novembro.
+          aoVoltar: () => context.go('/semana/${Datas.iso(repositorio.selecionado)}'),
+          aoAbrirAjustes: () => context.go('/ajustes'),
+        ),
       ),
       GoRoute(
         path: '/acesso',
@@ -97,15 +115,39 @@ class Rotas {
     return caminho.isEmpty || caminho == '/' ? '/semana' : caminho;
   }
 
-  Widget _semana(BuildContext context, GoRouterState estado) => TelaSemana(
-    repositorio: repositorio,
-    abaInicial: estado.pathParameters['chave'],
-    usuario: sessao.value?.usuario,
-    aoAbrirAjustes: () => context.go('/ajustes'),
-    // Sem backend não há conta: esconder "Sair" evita prometer um recurso que
-    // não existe (e o rodapé diz "neste aparelho", não "na sua conta").
-    aoSair: exigeLogin ? aoSair : null,
-  );
+  Widget _semana(BuildContext context, GoRouterState estado) {
+    // Duas formas de abrir um dia: `/semana/AAAA-MM-DD` (calendário e navegação)
+    // e `/dia/qua` (link antigo). A segunda resolve para a primeira quarta a
+    // partir de hoje, para não depender de "qual semana".
+    final porData = Datas.deIso(estado.pathParameters['data']);
+    final chave = estado.pathParameters['chave'];
+    final porChave = chave == null
+        ? null
+        : _primeiraDataDaChave(repositorio.selecionado, chave);
+
+    return TelaSemana(
+      repositorio: repositorio,
+      dataInicial: porData ?? porChave,
+      usuario: sessao.value?.usuario,
+      aoAbrirAjustes: () => context.go('/ajustes'),
+      aoAbrirCalendario: () => context.go('/calendario'),
+      // A rota acompanha a data escolhida: sem isto, recarregar a página
+      // voltaria para hoje e o link deixaria de representar a tela.
+      aoMudarData: (data) => context.replace('/semana/${Datas.iso(data)}'),
+      // Sem backend não há conta: esconder "Sair" evita prometer um recurso que
+      // não existe (e o rodapé diz "neste aparelho", não "na sua conta").
+      aoSair: exigeLogin ? aoSair : null,
+    );
+  }
+
+  /// Data da semana aberta que corresponde a [chave] (`qua`).
+  static DateTime _primeiraDataDaChave(DateTime referencia, String chave) {
+    if (!Dia.chaveValida(chave)) return referencia;
+    for (final data in Datas.semanaDe(referencia)) {
+      if (Semana.chaveDaData(data) == chave) return data;
+    }
+    return referencia;
+  }
 }
 
 /// Monta o [Escopo] a partir do estado corrente da sessão.
